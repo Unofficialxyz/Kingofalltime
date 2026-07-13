@@ -1,121 +1,198 @@
-import { useMemo, useState } from 'react';
-import { Plus, X, GitCompare } from 'lucide-react';
-import { STOCK_UNIVERSE } from '../lib/universe';
-import { getFundamentals, searchStocks, getCandles } from '../lib/dataService';
-import { getLiveQuote, useLiveQuotes } from '../lib/liveFeed';
-import { analyzeTechnicals } from '../lib/indicators';
-import { fmtNum, fmtPct, fmtPctRaw, fmtCompact } from '../lib/format';
-import type { StockMeta } from '../lib/types';
+import { useMemo, useState } from "react";
+import { Search, X, Plus, GitCompare } from "lucide-react";
+import { searchStocks } from "../lib/universe";
+import { getQuote, getFundamentals } from "../lib/dataService";
+import { useCurrency } from "../lib/currency";
+import { fmtPct, fmtCompact } from "../lib/format";
+import type { Quote, Fundamentals, StockMeta } from "../lib/types";
 
-interface Props { onOpenStock: (s: string) => void; }
+interface Row {
+  meta: StockMeta;
+  q: Quote;
+  f: Fundamentals;
+}
 
-export function Compare({ onOpenStock }: Props) {
-  useLiveQuotes();
-  const [selected, setSelected] = useState<string[]>(['AAPL', 'MSFT', 'NVDA']);
-  const [picker, setPicker] = useState('');
-  const [results, setResults] = useState<StockMeta[]>([]);
+const METRICS: { key: string; label: string; render: (r: Row, fmt: { formatPrice: (n: number) => string; formatCompact: (n: number) => string }) => React.ReactNode }[] = [
+  { key: "price", label: "Price", render: (r, fmt) => fmt.formatPrice(r.q.price) },
+  { key: "changePct", label: "Change %", render: (r) => <span className={r.q.changePct >= 0 ? "text-bull" : "text-bear"}>{fmtPct(r.q.changePct)}</span> },
+  { key: "marketCap", label: "Market Cap", render: (r, fmt) => fmt.formatCompact(r.q.marketCap) },
+  { key: "pe", label: "P/E Ratio", render: (r) => r.q.pe.toFixed(2) },
+  { key: "pb", label: "P/B Ratio", render: (r) => r.q.pb.toFixed(2) },
+  { key: "divYield", label: "Div Yield", render: (r) => r.q.divYield.toFixed(2) + "%" },
+  { key: "beta", label: "Beta", render: (r) => r.q.beta.toFixed(2) },
+  { key: "high52", label: "52w High", render: (r, fmt) => fmt.formatPrice(r.q.high52) },
+  { key: "low52", label: "52w Low", render: (r, fmt) => fmt.formatPrice(r.q.low52) },
+  { key: "volume", label: "Volume", render: (r) => fmtCompact(r.q.volume) },
+  { key: "roe", label: "ROE", render: (r) => r.f.roe.toFixed(2) + "%" },
+  { key: "debtToEquity", label: "Debt/Equity", render: (r) => r.f.debtToEquity.toFixed(2) },
+  { key: "revenueGrowth", label: "Revenue Growth", render: (r) => <span className={r.f.revenueGrowth >= 0 ? "text-bull" : "text-bear"}>{r.f.revenueGrowth.toFixed(2)}%</span> },
+];
 
-  const rows = useMemo(() =>
-    selected.map((sym) => {
-      const meta = STOCK_UNIVERSE.find((s) => s.symbol === sym);
-      const q = getLiveQuote(sym);
-      const f = getFundamentals(sym);
-      const tech = q ? analyzeTechnicals(getCandles(sym, '1Y')) : null;
-      return { meta, q, f, tech };
-    }).filter((r) => r.meta && r.q),
-  [selected]);
+export function Compare({ onOpenStock }: { onOpenStock: (s: string) => void }) {
+  const { formatPrice, formatCompact } = useCurrency();
+  const fmt = { formatPrice, formatCompact };
+  const [symbols, setSymbols] = useState<string[]>(["AAPL", "MSFT", "GOOGL"]);
+  const [query, setQuery] = useState("");
+  const [showResults, setShowResults] = useState(false);
 
-  const add = (sym: string) => {
-    if (!selected.includes(sym) && selected.length < 5) setSelected((s) => [...s, sym]);
-    setPicker(''); setResults([]);
-  };
+  const results = useMemo(() => {
+    if (!query.trim()) return [];
+    return searchStocks(query, 8);
+  }, [query]);
 
-  const metrics: { key: string; label: string; get: (r: typeof rows[0]) => string; tone?: (r: typeof rows[0]) => string }[] = [
-    { key: 'price', label: 'Price', get: (r) => fmtNum(r.q!.price) },
-    { key: 'chg', label: 'Day change %', get: (r) => `${r.q!.changePct >= 0 ? '+' : ''}${fmtPctRaw(r.q!.changePct)}`, tone: (r) => r.q!.changePct >= 0 ? 'text-bull' : 'text-bear' },
-    { key: 'mcap', label: 'Market cap', get: (r) => `$${fmtCompact(r.q!.marketCap)}` },
-    { key: 'pe', label: 'P/E', get: (r) => fmtNum(r.q!.pe) },
-    { key: 'fwdpe', label: 'Fwd P/E', get: (r) => fmtNum(r.f!.forwardPe) },
-    { key: 'peg', label: 'PEG', get: (r) => fmtNum(r.f!.peg) },
-    { key: 'pb', label: 'P/B', get: (r) => fmtNum(r.f!.pb) },
-    { key: 'roe', label: 'ROE', get: (r) => fmtPct(r.f!.roe) },
-    { key: 'netmargin', label: 'Net margin', get: (r) => fmtPct(r.f!.netMargin) },
-    { key: 'de', label: 'Debt/equity', get: (r) => fmtNum(r.f!.debtToEquity) },
-    { key: 'revgrowth', label: 'Rev growth', get: (r) => fmtPct(r.f!.revenueGrowth), tone: (r) => r.f!.revenueGrowth >= 0 ? 'text-bull' : 'text-bear' },
-    { key: 'div', label: 'Div yield', get: (r) => fmtPct(r.f!.dividendYield) },
-    { key: 'beta', label: 'Beta', get: (r) => fmtNum(r.f!.beta) },
-    { key: 'rsi', label: 'RSI', get: (r) => fmtNum(r.tech!.rsi) },
-    { key: 'verdict', label: 'Tech verdict', get: (r) => r.tech!.verdict, tone: (r) => r.tech!.verdict.includes('Buy') ? 'text-bull' : r.tech!.verdict.includes('Sell') ? 'text-bear' : 'text-ink-300' },
-  ];
+  const rows = useMemo<Row[]>(() => {
+    return symbols.map((sym) => {
+      const found = searchStocks(sym, 1)[0] ?? { symbol: sym, name: sym, exchange: "VIRTUAL" as const, region: "Virtual" as const, sector: "Technology" as const };
+      return { meta: found, q: getQuote(sym), f: getFundamentals(sym) };
+    });
+  }, [symbols]);
+
+  function addStock(sym: string) {
+    if (symbols.length >= 4) return;
+    if (symbols.includes(sym)) return;
+    setSymbols((s) => [...s, sym]);
+    setQuery("");
+    setShowResults(false);
+  }
+
+  function removeStock(sym: string) {
+    setSymbols((s) => s.filter((x) => x !== sym));
+  }
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-ink-50">Compare</h1>
-        <p className="text-ink-400 text-sm">Side-by-side metrics for up to 5 stocks.</p>
+    <div className="flex flex-col gap-6 w-full">
+      <div className="flex items-center gap-2">
+        <GitCompare className="w-6 h-6 text-brand-400" />
+        <h1 className="text-2xl font-bold gradient-text">Compare Stocks</h1>
       </div>
 
-      <div className="card p-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <GitCompare size={16} className="text-ink-400" />
-          {selected.map((s) => (
-            <span key={s} className="chip bg-white/5 text-ink-200">
-              {s}
-              <button onClick={() => setSelected((p) => p.filter((x) => x !== s))} className="ml-1 text-ink-500 hover:text-bear"><X size={12} /></button>
-            </span>
-          ))}
-          {selected.length < 5 && (
-            <div className="relative">
+      {/* Search / Add */}
+      <div className="card p-4 animate-fade-in">
+        <div className="flex flex-col gap-2">
+          <label className="text-sm text-ink-500">Add stocks to compare (2-4)</label>
+          <div className="relative">
+            <div className="flex items-center gap-2">
+              <Search className="w-4 h-4 text-ink-500 shrink-0" />
               <input
-                value={picker}
-                onChange={(e) => { setPicker(e.target.value); setResults(searchStocks(e.target.value).slice(0, 6)); }}
-                placeholder="Add stock…"
-                className="input py-1.5 text-sm w-40"
+                type="text"
+                placeholder="Search symbol or name..."
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setShowResults(true); }}
+                onFocus={() => setShowResults(true)}
+                className="input flex-1 text-base"
               />
-              {results.length > 0 && picker && (
-                <div className="absolute z-10 mt-1 w-56 card max-h-60 overflow-y-auto">
-                  {results.map((r) => (
-                    <button key={r.symbol} onClick={() => add(r.symbol)} className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 text-sm">
-                      <Plus size={12} className="text-brand-400" />
-                      <span className="font-semibold text-ink-100">{r.symbol}</span>
-                      <span className="text-ink-500 text-xs truncate">{r.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              <button
+                onClick={() => { if (results[0]) addStock(results[0].symbol); }}
+                disabled={!results[0] || symbols.length >= 4}
+                className="btn-primary text-base disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-4 h-4" />
+                Add
+              </button>
             </div>
-          )}
+            {showResults && query.trim() && results.length > 0 && (
+              <div className="absolute z-10 mt-1 w-full card p-1 max-h-64 overflow-y-auto scrollbar-thin">
+                {results.map((r) => (
+                  <button
+                    key={r.symbol}
+                    onClick={() => addStock(r.symbol)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/5 transition text-left"
+                  >
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-base font-semibold text-ink-100">{r.symbol}</span>
+                      <span className="text-sm text-ink-500 truncate">{r.name}</span>
+                    </div>
+                    <span className="chip bg-brand-500/15 text-brand-300 text-sm">{r.sector}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <span className="text-sm text-ink-500">{symbols.length} of 4 stocks added</span>
         </div>
       </div>
 
-      {rows.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+      {/* Comparison Table */}
+      {rows.length < 2 ? (
+        <div className="card p-12 text-center animate-fade-in">
+          <GitCompare className="w-12 h-12 text-ink-600 mx-auto mb-3" />
+          <p className="text-base text-ink-400">Add at least 2 stocks to start comparing.</p>
+        </div>
+      ) : (
+        <div className="card overflow-hidden animate-fade-in">
+          <div className="overflow-x-auto scrollbar-thin">
+            <table className="w-full">
               <thead>
-                <tr className="border-b border-white/5">
-                  <th className="text-left px-4 py-3 text-xs text-ink-500 font-medium">Metric</th>
+                <tr className="border-b border-white/5 bg-ink-900/80">
+                  <th className="px-4 py-3 text-left text-base font-semibold text-ink-400 sticky left-0 bg-ink-900/80 z-10">
+                    Metric
+                  </th>
                   {rows.map((r) => (
-                    <th key={r.meta!.symbol} className="text-left px-4 py-3">
-                      <button onClick={() => onOpenStock(r.meta!.symbol)} className="text-left">
-                        <div className="font-bold text-ink-100">{r.meta!.symbol}</div>
-                        <div className="text-xs text-ink-500 truncate max-w-[140px]">{r.meta!.name}</div>
-                      </button>
+                    <th key={r.meta.symbol} className="px-4 py-3 min-w-[180px]">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            onClick={() => onOpenStock(r.meta.symbol)}
+                            className="text-base font-bold text-ink-100 hover:text-brand-300 transition text-left"
+                          >
+                            {r.meta.symbol}
+                          </button>
+                          <button
+                            onClick={() => removeStock(r.meta.symbol)}
+                            className="text-ink-500 hover:text-bear transition"
+                            title="Remove"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <span className="text-sm text-ink-500 truncate">{r.meta.name}</span>
+                        <span className="chip bg-brand-500/10 text-brand-300 text-sm w-fit">{r.meta.sector}</span>
+                      </div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {metrics.map((m) => (
-                  <tr key={m.key} className="border-t border-white/[0.03]">
-                    <td className="px-4 py-2.5 text-ink-400 text-xs">{m.label}</td>
-                    {rows.map((r) => (
-                      <td key={r.meta!.symbol} className={`px-4 py-2.5 font-mono ${m.tone ? m.tone(r) : 'text-ink-100'}`}>
-                        {m.get(r)}
+                {METRICS.map((m) => {
+                  const values = rows.map((r) => {
+                    const v = m.render(r, fmt);
+                    return typeof v === "number" ? String(v) : v;
+                  });
+                  const numericVals = rows.map((r) => {
+                    if (m.key === "price") return r.q.price;
+                    if (m.key === "changePct") return r.q.changePct;
+                    if (m.key === "marketCap") return r.q.marketCap;
+                    if (m.key === "pe") return r.q.pe;
+                    if (m.key === "pb") return r.q.pb;
+                    if (m.key === "divYield") return r.q.divYield;
+                    if (m.key === "beta") return r.q.beta;
+                    if (m.key === "high52") return r.q.high52;
+                    if (m.key === "low52") return r.q.low52;
+                    if (m.key === "volume") return r.q.volume;
+                    if (m.key === "roe") return r.f.roe;
+                    if (m.key === "debtToEquity") return r.f.debtToEquity;
+                    if (m.key === "revenueGrowth") return r.f.revenueGrowth;
+                    return 0;
+                  });
+                  const bestIdx = m.key === "low52" || m.key === "debtToEquity"
+                    ? numericVals.indexOf(Math.min(...numericVals))
+                    : numericVals.indexOf(Math.max(...numericVals));
+                  return (
+                    <tr key={m.key} className="border-b border-white/5 hover:bg-white/5 transition">
+                      <td className="px-4 py-3 text-base font-medium text-ink-300 sticky left-0 bg-ink-900/60 backdrop-blur-sm">
+                        {m.label}
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                      {rows.map((r, i) => (
+                        <td
+                          key={r.meta.symbol}
+                          className={`px-4 py-3 text-base ${i === bestIdx ? "text-bull font-semibold" : "text-ink-200"}`}
+                        >
+                          {values[i]}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

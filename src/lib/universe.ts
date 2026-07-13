@@ -1,243 +1,267 @@
-import type { StockMeta, Region, Sector, Exchange } from './types';
+import type { StockMeta, Exchange, Region, Sector } from "./types";
+import { INDIAN_STOCKS } from "./indianStocks";
 
-// A broad universe spanning major world markets. Deterministic data is
-// generated per-symbol so the app is fully functional offline; a live feed can
-// be layered in by replacing the data service.
-export const STOCK_UNIVERSE: StockMeta[] = [
-  // ===== United States — NYSE / NASDAQ (60) =====
-  { symbol: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Consumer Electronics' },
-  { symbol: 'MSFT', name: 'Microsoft Corporation', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'NVDA', name: 'NVIDIA Corporation', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: 'AMZN', name: 'Amazon.com, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Internet Retail' },
-  { symbol: 'GOOGL', name: 'Alphabet Inc. Class A', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Communication Services', industry: 'Internet Content' },
-  { symbol: 'META', name: 'Meta Platforms, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Communication Services', industry: 'Internet Content' },
-  { symbol: 'TSLA', name: 'Tesla, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'BRK.B', name: 'Berkshire Hathaway Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Insurance—Diversified' },
-  { symbol: 'JPM', name: 'JPMorgan Chase & Co.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'V', name: 'Visa Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Credit Services' },
-  { symbol: 'JNJ', name: 'Johnson & Johnson', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'WMT', name: 'Walmart Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Staples', industry: 'Discount Stores' },
-  { symbol: 'XOM', name: 'Exxon Mobil Corporation', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: 'UNH', name: 'UnitedHealth Group Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Healthcare', industry: 'Healthcare Plans' },
-  { symbol: 'HD', name: 'The Home Depot, Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Home Improvement' },
-  { symbol: 'PG', name: 'Procter & Gamble Company', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Staples', industry: 'Household Products' },
-  { symbol: 'MA', name: 'Mastercard Incorporated', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Credit Services' },
-  { symbol: 'KO', name: 'The Coca-Cola Company', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Staples', industry: 'Beverages' },
-  { symbol: 'DIS', name: 'The Walt Disney Company', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Communication Services', industry: 'Entertainment' },
-  { symbol: 'NFLX', name: 'Netflix, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Communication Services', industry: 'Entertainment' },
-  { symbol: 'AMD', name: 'Advanced Micro Devices, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: 'INTC', name: 'Intel Corporation', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: 'BAC', name: 'Bank of America Corporation', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'PFE', name: 'Pfizer Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'CVX', name: 'Chevron Corporation', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: 'AVGO', name: 'Broadcom Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: 'PEP', name: 'PepsiCo, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Consumer Staples', industry: 'Beverages' },
-  { symbol: 'COST', name: 'Costco Wholesale Corporation', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Consumer Staples', industry: 'Discount Stores' },
-  { symbol: 'ABBV', name: 'AbbVie Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'MRK', name: 'Merck & Co., Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'TMO', name: 'Thermo Fisher Scientific Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Healthcare', industry: 'Diagnostics' },
-  { symbol: 'ABT', name: 'Abbott Laboratories', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Healthcare', industry: 'Medical Devices' },
-  { symbol: 'CRM', name: 'Salesforce, Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'ADBE', name: 'Adobe Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'ORCL', name: 'Oracle Corporation', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'CSCO', name: 'Cisco Systems, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Communication Equipment' },
-  { symbol: 'MCD', name: "McDonald's Corporation", exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Restaurants' },
-  { symbol: 'NKE', name: 'NIKE, Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Footwear & Accessories' },
-  { symbol: 'PYPL', name: 'PayPal Holdings, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Credit Services' },
-  { symbol: 'QCOM', name: 'QUALCOMM Incorporated', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: 'TXN', name: 'Texas Instruments Incorporated', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: 'LOW', name: "Lowe's Companies, Inc.", exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Home Improvement' },
-  { symbol: 'UPS', name: 'United Parcel Service, Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Industrials', industry: 'Integrated Freight' },
-  { symbol: 'BA', name: 'The Boeing Company', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Industrials', industry: 'Aerospace & Defense' },
-  { symbol: 'CAT', name: 'Caterpillar Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Industrials', industry: 'Farm & Heavy Machinery' },
-  { symbol: 'GS', name: 'The Goldman Sachs Group, Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Capital Markets' },
-  { symbol: 'MS', name: 'Morgan Stanley', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Capital Markets' },
-  { symbol: 'IBM', name: 'International Business Machines', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'IT Services' },
-  { symbol: 'GE', name: 'GE Aerospace', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Industrials', industry: 'Aerospace & Defense' },
-  { symbol: 'F', name: 'Ford Motor Company', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'GM', name: 'General Motors Company', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'SBUX', name: 'Starbucks Corporation', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Restaurants' },
-  { symbol: 'UBER', name: 'Uber Technologies, Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'SHOP', name: 'Shopify Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'SQ', name: 'Block, Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Credit Services' },
-  { symbol: 'ZM', name: 'Zoom Video Communications, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'SNAP', name: 'Snap Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Communication Services', industry: 'Internet Content' },
-  { symbol: 'PINS', name: 'Pinterest, Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Communication Services', industry: 'Internet Content' },
-  { symbol: 'ROKU', name: 'Roku, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Communication Services', industry: 'Entertainment' },
-  { symbol: 'PLTR', name: 'Palantir Technologies Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'COIN', name: 'Coinbase Global, Inc.', exchange: 'NASDAQ', region: 'United States', currency: 'USD', sector: 'Financials', industry: 'Capital Markets' },
-  { symbol: 'DASH', name: 'DoorDash, Inc.', exchange: 'NYSE', region: 'United States', currency: 'USD', sector: 'Consumer Discretionary', industry: 'Internet Retail' },
+export const VIRTUAL_UNIVERSE_SIZE = 90_000_000_000_000;
 
-  // ===== India — NSE / BSE (40) =====
-  { symbol: 'RELIANCE', name: 'Reliance Industries Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Energy', industry: 'Oil & Gas Refining' },
-  { symbol: 'TCS', name: 'Tata Consultancy Services Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Technology', industry: 'IT Services' },
-  { symbol: 'HDFCBANK', name: 'HDFC Bank Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'INFY', name: 'Infosys Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Technology', industry: 'IT Services' },
-  { symbol: 'ICICIBANK', name: 'ICICI Bank Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'BHARTIARTL', name: 'Bharti Airtel Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Communication Services', industry: 'Telecom' },
-  { symbol: 'SBIN', name: 'State Bank of India', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'ITC', name: 'ITC Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Consumer Staples', industry: 'Tobacco' },
-  { symbol: 'LT', name: 'Larsen & Toubro Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Industrials', industry: 'Engineering & Construction' },
-  { symbol: 'AXISBANK', name: 'Axis Bank Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'KOTAKBANK', name: 'Kotak Mahindra Bank Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'MARUTI', name: 'Maruti Suzuki India Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'ASIANPAINT', name: 'Asian Paints Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Materials', industry: 'Specialty Chemicals' },
-  { symbol: 'SUNPHARMA', name: 'Sun Pharmaceutical Industries Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'TATAMOTORS', name: 'Tata Motors Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'WIPRO', name: 'Wipro Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Technology', industry: 'IT Services' },
-  { symbol: 'HCLTECH', name: 'HCL Technologies Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Technology', industry: 'IT Services' },
-  { symbol: 'ULTRACEMCO', name: 'UltraTech Cement Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Materials', industry: 'Building Materials' },
-  { symbol: 'TITAN', name: 'Titan Company Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Consumer Discretionary', industry: 'Luxury Goods' },
-  { symbol: 'BAJFINANCE', name: 'Bajaj Finance Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Financials', industry: 'Credit Services' },
-  { symbol: 'NESTLEIND', name: 'Nestlé India Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Consumer Staples', industry: 'Packaged Foods' },
-  { symbol: 'ONGC', name: 'Oil & Natural Gas Corporation Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Energy', industry: 'Oil & Gas E&P' },
-  { symbol: 'NTPC', name: 'NTPC Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Utilities', industry: 'Utilities—Regulated' },
-  { symbol: 'POWERGRID', name: 'Power Grid Corporation of India', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Utilities', industry: 'Utilities—Regulated' },
-  { symbol: 'TATASTEEL', name: 'Tata Steel Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Materials', industry: 'Steel' },
-  { symbol: 'JSWSTEEL', name: 'JSW Steel Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Materials', industry: 'Steel' },
-  { symbol: 'HINDALCO', name: 'Hindalco Industries Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Materials', industry: 'Aluminum' },
-  { symbol: 'COALINDIA', name: 'Coal India Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Energy', industry: 'Thermal Coal' },
-  { symbol: 'DRREDDY', name: "Dr. Reddy's Laboratories Ltd.", exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'CIPLA', name: 'Cipla Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'GRASIM', name: 'Grasim Industries Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Materials', industry: 'Chemicals' },
-  { symbol: 'ADANIENT', name: 'Adani Enterprises Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Industrials', industry: 'Conglomerates' },
-  { symbol: 'ADANIPORTS', name: 'Adani Ports & Special Economic Zone', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Industrials', industry: 'Marine Ports' },
-  { symbol: 'BAJAJFINSV', name: 'Bajaj Finserv Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Financials', industry: 'Insurance—Diversified' },
-  { symbol: 'TECHM', name: 'Tech Mahindra Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Technology', industry: 'IT Services' },
-  { symbol: 'DIVISLAB', name: 'Divi\u2019s Laboratories Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'BRITANNIA', name: 'Britannia Industries Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Consumer Staples', industry: 'Packaged Foods' },
-  { symbol: 'EICHERMOT', name: 'Eicher Motors Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'HEROMOTOCO', name: 'Hero MotoCorp Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'M&M', name: 'Mahindra & Mahindra Ltd.', exchange: 'NSE', region: 'India', currency: 'INR', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-
-  // ===== Europe (45) =====
-  { symbol: 'MC.PA', name: 'LVMH Moët Hennessy Louis Vuitton', exchange: 'Euronext', region: 'France', currency: 'EUR', sector: 'Consumer Discretionary', industry: 'Luxury Goods' },
-  { symbol: 'OR.PA', name: "L'Oréal S.A.", exchange: 'Euronext', region: 'France', currency: 'EUR', sector: 'Consumer Staples', industry: 'Personal Products' },
-  { symbol: 'AIR.PA', name: 'Airbus SE', exchange: 'Euronext', region: 'France', currency: 'EUR', sector: 'Industrials', industry: 'Aerospace & Defense' },
-  { symbol: 'SAN.PA', name: 'Sanofi S.A.', exchange: 'Euronext', region: 'France', currency: 'EUR', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'TTE.PA', name: 'TotalEnergies SE', exchange: 'Euronext', region: 'France', currency: 'EUR', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: 'BN.PA', name: 'Danone S.A.', exchange: 'Euronext', region: 'France', currency: 'EUR', sector: 'Consumer Staples', industry: 'Packaged Foods' },
-  { symbol: 'SAP.DE', name: 'SAP SE', exchange: 'XETRA', region: 'Germany', currency: 'EUR', sector: 'Technology', industry: 'Software' },
-  { symbol: 'SIE.DE', name: 'Siemens AG', exchange: 'XETRA', region: 'Germany', currency: 'EUR', sector: 'Industrials', industry: 'Conglomerates' },
-  { symbol: 'ALV.DE', name: 'Allianz SE', exchange: 'XETRA', region: 'Germany', currency: 'EUR', sector: 'Financials', industry: 'Insurance—Diversified' },
-  { symbol: 'BAS.DE', name: 'BASF SE', exchange: 'XETRA', region: 'Germany', currency: 'EUR', sector: 'Materials', industry: 'Chemicals' },
-  { symbol: 'BAYN.DE', name: 'Bayer AG', exchange: 'XETRA', region: 'Germany', currency: 'EUR', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'DTE.DE', name: 'Deutsche Telekom AG', exchange: 'XETRA', region: 'Germany', currency: 'EUR', sector: 'Communication Services', industry: 'Telecom' },
-  { symbol: 'VOW3.DE', name: 'Volkswagen AG', exchange: 'XETRA', region: 'Germany', currency: 'EUR', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'BMW.DE', name: 'Bayerische Motoren Werke AG', exchange: 'XETRA', region: 'Germany', currency: 'EUR', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'DBK.DE', name: 'Deutsche Bank AG', exchange: 'XETRA', region: 'Germany', currency: 'EUR', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'NESN.SW', name: 'Nestlé S.A.', exchange: 'SIX', region: 'Switzerland', currency: 'CHF', sector: 'Consumer Staples', industry: 'Packaged Foods' },
-  { symbol: 'NOVN.SW', name: 'Novartis AG', exchange: 'SIX', region: 'Switzerland', currency: 'CHF', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'ROG.SW', name: 'Roche Holding AG', exchange: 'SIX', region: 'Switzerland', currency: 'CHF', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'ABB.SW', name: 'ABB Ltd.', exchange: 'SIX', region: 'Switzerland', currency: 'CHF', sector: 'Industrials', industry: 'Electrical Equipment' },
-  { symbol: 'GIVN.SW', name: 'Givaudan SA', exchange: 'SIX', region: 'Switzerland', currency: 'CHF', sector: 'Materials', industry: 'Specialty Chemicals' },
-  { symbol: 'ASML.AS', name: 'ASML Holding N.V.', exchange: 'Euronext', region: 'Netherlands', currency: 'EUR', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: 'INGA.AS', name: 'ING Groep N.V.', exchange: 'Euronext', region: 'Netherlands', currency: 'EUR', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'RDSA.AS', name: 'Shell plc', exchange: 'Euronext', region: 'Netherlands', currency: 'EUR', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: 'SHEL.L', name: 'Shell plc', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: 'AZN.L', name: 'AstraZeneca PLC', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'HSBA.L', name: 'HSBC Holdings plc', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'ULVR.L', name: 'Unilever PLC', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Consumer Staples', industry: 'Household Products' },
-  { symbol: 'BP.L', name: 'BP p.l.c.', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: 'GSK.L', name: 'GSK plc', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'RIO.L', name: 'Rio Tinto Group', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Materials', industry: 'Other Industrial Metals' },
-  { symbol: 'BARC.L', name: 'Barclays PLC', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'LLOY.L', name: 'Lloyds Banking Group plc', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'DGE.L', name: 'Diageo plc', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Consumer Staples', industry: 'Beverages' },
-  { symbol: 'BATS.L', name: 'British American Tobacco p.l.c.', exchange: 'LSE', region: 'United Kingdom', currency: 'GBP', sector: 'Consumer Staples', industry: 'Tobacco' },
-  { symbol: 'IBE.MC', name: 'Iberdrola, S.A.', exchange: 'BME', region: 'Spain', currency: 'EUR', sector: 'Utilities', industry: 'Utilities—Renewable' },
-  { symbol: 'ITX.MC', name: 'Inditex, S.A.', exchange: 'BME', region: 'Spain', currency: 'EUR', sector: 'Consumer Discretionary', industry: 'Apparel Retail' },
-  { symbol: 'SAN.MC', name: 'Banco Santander, S.A.', exchange: 'BME', region: 'Spain', currency: 'EUR', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'ENEL.MI', name: 'Enel S.p.A.', exchange: 'BIT', region: 'Italy', currency: 'EUR', sector: 'Utilities', industry: 'Utilities—Regulated' },
-  { symbol: 'ENI.MI', name: 'Eni S.p.A.', exchange: 'BIT', region: 'Italy', currency: 'EUR', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: 'STLAM.MI', name: 'Stellantis N.V.', exchange: 'BIT', region: 'Italy', currency: 'EUR', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: 'ISP.MI', name: 'Intesa Sanpaolo S.p.A.', exchange: 'BIT', region: 'Italy', currency: 'EUR', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'NDA-FI.HE', name: 'Nokia Oyj', exchange: 'OMX', region: 'Nordics', currency: 'EUR', sector: 'Technology', industry: 'Communication Equipment' },
-  { symbol: 'ERIC-B.ST', name: 'Telefonaktiebolaget LM Ericsson', exchange: 'OMX', region: 'Nordics', currency: 'SEK', sector: 'Technology', industry: 'Communication Equipment' },
-  { symbol: 'VOLV-B.ST', name: 'Volvo, AB', exchange: 'OMX', region: 'Nordics', currency: 'SEK', sector: 'Industrials', industry: 'Farm & Heavy Machinery' },
-  { symbol: 'NOVO-B.CO', name: 'Novo Nordisk A/S', exchange: 'OMX', region: 'Nordics', currency: 'DKK', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'PKN.WA', name: 'PKN Orlen S.A.', exchange: 'WSE', region: 'Poland', currency: 'PLN', sector: 'Energy', industry: 'Oil & Gas Refining' },
-
-  // ===== Asia-Pacific (40) =====
-  { symbol: '7203.T', name: 'Toyota Motor Corporation', exchange: 'TSE', region: 'Japan', currency: 'JPY', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: '6758.T', name: 'Sony Group Corporation', exchange: 'TSE', region: 'Japan', currency: 'JPY', sector: 'Technology', industry: 'Consumer Electronics' },
-  { symbol: '9984.T', name: 'SoftBank Group Corp.', exchange: 'TSE', region: 'Japan', currency: 'JPY', sector: 'Communication Services', industry: 'Telecom' },
-  { symbol: '8306.T', name: 'Mitsubishi UFJ Financial Group', exchange: 'TSE', region: 'Japan', currency: 'JPY', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: '7974.T', name: 'Nintendo Co., Ltd.', exchange: 'TSE', region: 'Japan', currency: 'JPY', sector: 'Communication Services', industry: 'Electronic Gaming' },
-  { symbol: '6861.T', name: 'Keyence Corporation', exchange: 'TSE', region: 'Japan', currency: 'JPY', sector: 'Technology', industry: 'Electronic Components' },
-  { symbol: '4519.T', name: 'Chugai Pharmaceutical Co., Ltd.', exchange: 'TSE', region: 'Japan', currency: 'JPY', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: '0700.HK', name: 'Tencent Holdings Ltd.', exchange: 'HKEX', region: 'Hong Kong', currency: 'HKD', sector: 'Communication Services', industry: 'Internet Content' },
-  { symbol: '9988.HK', name: 'Alibaba Group Holding Ltd.', exchange: 'HKEX', region: 'Hong Kong', currency: 'HKD', sector: 'Consumer Discretionary', industry: 'Internet Retail' },
-  { symbol: '3690.HK', name: 'Meituan', exchange: 'HKEX', region: 'Hong Kong', currency: 'HKD', sector: 'Consumer Discretionary', industry: 'Internet Retail' },
-  { symbol: '1299.HK', name: 'AIA Group Limited', exchange: 'HKEX', region: 'Hong Kong', currency: 'HKD', sector: 'Financials', industry: 'Insurance—Life' },
-  { symbol: '600519.SS', name: 'Kweichow Moutai Co., Ltd.', exchange: 'SSE', region: 'China', currency: 'CNY', sector: 'Consumer Staples', industry: 'Beverages' },
-  { symbol: '601318.SS', name: 'Ping An Insurance Co.', exchange: 'SSE', region: 'China', currency: 'CNY', sector: 'Financials', industry: 'Insurance—Diversified' },
-  { symbol: '600036.SS', name: 'China Merchants Bank Co., Ltd.', exchange: 'SSE', region: 'China', currency: 'CNY', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: '601398.SS', name: 'Industrial and Commercial Bank of China', exchange: 'SSE', region: 'China', currency: 'CNY', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: '600028.SS', name: 'China Petroleum & Chemical (Sinopec)', exchange: 'SSE', region: 'China', currency: 'CNY', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: '005930.KS', name: 'Samsung Electronics Co., Ltd.', exchange: 'KRX', region: 'South Korea', currency: 'KRW', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: '005380.KS', name: 'Hyundai Motor Company', exchange: 'KRX', region: 'South Korea', currency: 'KRW', sector: 'Consumer Discretionary', industry: 'Auto Manufacturers' },
-  { symbol: '000660.KS', name: 'SK Hynix Inc.', exchange: 'KRX', region: 'South Korea', currency: 'KRW', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: '2330.TW', name: 'Taiwan Semiconductor Manufacturing Co.', exchange: 'TWSE', region: 'Taiwan', currency: 'TWD', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: '2454.TW', name: 'MediaTek Inc.', exchange: 'TWSE', region: 'Taiwan', currency: 'TWD', sector: 'Technology', industry: 'Semiconductors' },
-  { symbol: '2317.TW', name: 'Hon Hai Precision Industry (Foxconn)', exchange: 'TWSE', region: 'Taiwan', currency: 'TWD', sector: 'Technology', industry: 'Electronic Components' },
-  { symbol: 'BHP.AX', name: 'BHP Group Ltd.', exchange: 'ASX', region: 'Australia', currency: 'AUD', sector: 'Materials', industry: 'Other Industrial Metals' },
-  { symbol: 'CBA.AX', name: 'Commonwealth Bank of Australia', exchange: 'ASX', region: 'Australia', currency: 'AUD', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'CSL.AX', name: 'CSL Limited', exchange: 'ASX', region: 'Australia', currency: 'AUD', sector: 'Healthcare', industry: 'Biotechnology' },
-  { symbol: 'RIO.AX', name: 'Rio Tinto Limited', exchange: 'ASX', region: 'Australia', currency: 'AUD', sector: 'Materials', industry: 'Other Industrial Metals' },
-  { symbol: 'NAB.AX', name: 'National Australia Bank Limited', exchange: 'ASX', region: 'Australia', currency: 'AUD', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'WBC.AX', name: 'Westpac Banking Corporation', exchange: 'ASX', region: 'Australia', currency: 'AUD', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'D05.SI', name: 'DBS Group Holdings Ltd.', exchange: 'SGX', region: 'Singapore', currency: 'SGD', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'U11.SI', name: 'United Overseas Bank Ltd.', exchange: 'SGX', region: 'Singapore', currency: 'SGD', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'C6L.SI', name: 'Singapore Airlines Limited', exchange: 'SGX', region: 'Singapore', currency: 'SGD', sector: 'Industrials', industry: 'Airlines' },
-  { symbol: 'RY.TO', name: 'Royal Bank of Canada', exchange: 'TSX', region: 'Canada', currency: 'CAD', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'SHOP.TO', name: 'Shopify Inc.', exchange: 'TSX', region: 'Canada', currency: 'CAD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'ENB.TO', name: 'Enbridge Inc.', exchange: 'TSX', region: 'Canada', currency: 'CAD', sector: 'Energy', industry: 'Oil & Gas Midstream' },
-  { symbol: 'TD.TO', name: 'The Toronto-Dominion Bank', exchange: 'TSX', region: 'Canada', currency: 'CAD', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'BNS.TO', name: 'The Bank of Nova Scotia', exchange: 'TSX', region: 'Canada', currency: 'CAD', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'CNQ.TO', name: 'Canadian Natural Resources Limited', exchange: 'TSX', region: 'Canada', currency: 'CAD', sector: 'Energy', industry: 'Oil & Gas E&P' },
-  { symbol: 'NVO', name: 'Novo Nordisk A/S', exchange: 'NYSE', region: 'Europe', currency: 'USD', sector: 'Healthcare', industry: 'Drug Manufacturers' },
-  { symbol: 'SAP', name: 'SAP SE', exchange: 'NYSE', region: 'Europe', currency: 'USD', sector: 'Technology', industry: 'Software' },
-  { symbol: 'TSM', name: 'Taiwan Semiconductor Manufacturing Co.', exchange: 'NYSE', region: 'Taiwan', currency: 'USD', sector: 'Technology', industry: 'Semiconductors' },
-
-  // ===== Emerging markets (25) =====
-  { symbol: 'PETR4.SA', name: 'Petróleo Brasileiro S.A. (Petrobras)', exchange: 'BVMF', region: 'Brazil', currency: 'BRL', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: 'VALE3.SA', name: 'Vale S.A.', exchange: 'BVMF', region: 'Brazil', currency: 'BRL', sector: 'Materials', industry: 'Other Industrial Metals' },
-  { symbol: 'ITUB4.SA', name: 'Itaú Unibanco Holding S.A.', exchange: 'BVMF', region: 'Brazil', currency: 'BRL', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'BBDC4.SA', name: 'Banco Bradesco S.A.', exchange: 'BVMF', region: 'Brazil', currency: 'BRL', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'ABEV3.SA', name: 'Ambev S.A.', exchange: 'BVMF', region: 'Brazil', currency: 'BRL', sector: 'Consumer Staples', industry: 'Beverages' },
-  { symbol: 'GEBR11.SA', name: 'Engie Brasil Energia S.A.', exchange: 'BVMF', region: 'Brazil', currency: 'BRL', sector: 'Utilities', industry: 'Utilities—Regulated' },
-  { symbol: '2222.SR', name: 'Saudi Arabian Oil Co. (Aramco)', exchange: 'TADAWUL', region: 'Saudi Arabia', currency: 'SAR', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: '1180.SR', name: 'Al Rajhi Banking & Investment Corp.', exchange: 'TADAWUL', region: 'Saudi Arabia', currency: 'SAR', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: '2010.SR', name: 'Saudi Basic Industries Corp. (SABIC)', exchange: 'TADAWUL', region: 'Saudi Arabia', currency: 'SAR', sector: 'Materials', industry: 'Chemicals' },
-  { symbol: 'EMIRATES', name: 'Emirates NBD Bank PJSC', exchange: 'DFM', region: 'UAE', currency: 'AED', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'EMAAR', name: 'Emaar Properties PJSC', exchange: 'DFM', region: 'UAE', currency: 'AED', sector: 'Real Estate', industry: 'Real Estate—Development' },
-  { symbol: 'GARAN', name: 'Garanti BBVA', exchange: 'BIST', region: 'Turkey', currency: 'TRY', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'AKBNK', name: 'Akbank T.A.S.', exchange: 'BIST', region: 'Turkey', currency: 'TRY', sector: 'Financials', industry: 'Banks—Diversified' },
-  { symbol: 'THYAO', name: 'Turkish Airlines', exchange: 'BIST', region: 'Turkey', currency: 'TRY', sector: 'Industrials', industry: 'Airlines' },
-  { symbol: 'JSE.JO', name: 'JSE Limited', exchange: 'JSE', region: 'South Africa', currency: 'ZAR', sector: 'Financials', industry: 'Capital Markets' },
-  { symbol: 'NPN.JO', name: 'Naspers Limited', exchange: 'JSE', region: 'South Africa', currency: 'ZAR', sector: 'Communication Services', industry: 'Internet Content' },
-  { symbol: 'SOL.JO', name: 'Sasol Limited', exchange: 'JSE', region: 'South Africa', currency: 'ZAR', sector: 'Energy', industry: 'Oil & Gas Integrated' },
-  { symbol: 'MTN.JO', name: 'MTN Group Limited', exchange: 'JSE', region: 'South Africa', currency: 'ZAR', sector: 'Communication Services', industry: 'Telecom' },
-  { symbol: 'DANGCEM', name: 'Dangote Cement Plc', exchange: 'NSE.NG', region: 'Nigeria', currency: 'NGN', sector: 'Materials', industry: 'Building Materials' },
-  { symbol: 'MTNN', name: 'MTN Nigeria Communications Plc', exchange: 'NSE.NG', region: 'Nigeria', currency: 'NGN', sector: 'Communication Services', industry: 'Telecom' },
-  { symbol: 'GTCO', name: 'Guaranty Trust Holding Company Plc', exchange: 'NSE.NG', region: 'Nigeria', currency: 'NGN', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'ZENITHBANK', name: 'Zenith Bank Plc', exchange: 'NSE.NG', region: 'Nigeria', currency: 'NGN', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'OPAY', name: 'OPay (Opera Limited)', exchange: 'NYSE', region: 'Nigeria', currency: 'USD', sector: 'Financials', industry: 'Credit Services' },
-  { symbol: 'STERB.NS', name: 'Sterling Bank Plc', exchange: 'NSE.NG', region: 'Nigeria', currency: 'NGN', sector: 'Financials', industry: 'Banks—Regional' },
-  { symbol: 'ETI', name: 'Ecobank Transnational Incorporated', exchange: 'NSE.NG', region: 'Nigeria', currency: 'NGN', sector: 'Financials', industry: 'Banks—Diversified' },
+const US_STOCKS: [string, string, Sector][] = [
+  ["AAPL", "Apple Inc", "Technology"], ["MSFT", "Microsoft Corp", "Technology"],
+  ["GOOGL", "Alphabet Inc", "Technology"], ["AMZN", "Amazon.com Inc", "ECommerce"],
+  ["META", "Meta Platforms Inc", "Communication"], ["NVDA", "NVIDIA Corp", "Semiconductors"],
+  ["TSLA", "Tesla Inc", "EV"], ["JPM", "JPMorgan Chase & Co", "Finance"],
+  ["V", "Visa Inc", "Finance"], ["JNJ", "Johnson & Johnson", "Healthcare"],
+  ["WMT", "Walmart Inc", "Retail"], ["MA", "Mastercard Inc", "Finance"],
+  ["PG", "Procter & Gamble Co", "Consumer"], ["UNH", "UnitedHealth Group", "Healthcare"],
+  ["HD", "Home Depot Inc", "Retail"], ["DIS", "Walt Disney Co", "Media"],
+  ["BAC", "Bank of America Corp", "Finance"], ["XOM", "Exxon Mobil Corp", "Energy"],
+  ["PFE", "Pfizer Inc", "Pharma"], ["KO", "Coca-Cola Co", "Consumer"],
+  ["PEP", "PepsiCo Inc", "Food"], ["INTC", "Intel Corp", "Semiconductors"],
+  ["CSCO", "Cisco Systems Inc", "Technology"], ["ORCL", "Oracle Corp", "Technology"],
+  ["ADBE", "Adobe Inc", "Technology"], ["NFLX", "Netflix Inc", "Media"],
+  ["CRM", "Salesforce Inc", "Technology"], ["AMD", "Advanced Micro Devices", "Semiconductors"],
+  ["AVGO", "Broadcom Inc", "Semiconductors"], ["COST", "Costco Wholesale Corp", "Retail"],
+  ["TMO", "Thermo Fisher Scientific", "Healthcare"], ["ABT", "Abbott Laboratories", "Healthcare"],
+  ["NKE", "Nike Inc", "Consumer"], ["MRK", "Merck & Co Inc", "Pharma"],
+  ["QCOM", "Qualcomm Inc", "Semiconductors"], ["TXN", "Texas Instruments", "Semiconductors"],
+  ["IBM", "IBM Corp", "Technology"], ["GS", "Goldman Sachs Group", "Finance"],
+  ["MS", "Morgan Stanley", "Finance"], ["CVX", "Chevron Corp", "Energy"],
+  ["BA", "Boeing Co", "Aerospace"], ["CAT", "Caterpillar Inc", "Industrial"],
+  ["GE", "General Electric Co", "Industrial"], ["F", "Ford Motor Co", "Automotive"],
+  ["GM", "General Motors Co", "Automotive"], ["C", "Citigroup Inc", "Finance"],
+  ["WFC", "Wells Fargo & Co", "Finance"], ["PYPL", "PayPal Holdings", "Fintech"],
+  ["UBER", "Uber Technologies", "Travel"], ["ABNB", "Airbnb Inc", "RealEstate"],
+  ["SHOP", "Shopify Inc", "ECommerce"], ["SQ", "Block Inc", "Fintech"],
+  ["SNOW", "Snowflake Inc", "CloudComputing"], ["PLTR", "Palantir Technologies", "AI"],
+  ["CRWD", "CrowdStrike Holdings", "Cybersecurity"], ["NET", "Cloudflare Inc", "Cybersecurity"],
+  ["ZM", "Zoom Video Communications", "Technology"], ["COIN", "Coinbase Global", "Fintech"],
+  ["HOOD", "Robinhood Markets", "Fintech"], ["DASH", "DoorDash Inc", "ECommerce"],
+  ["PLUG", "Plug Power Inc", "RenewableEnergy"], ["ENPH", "Enphase Energy Inc", "RenewableEnergy"],
+  ["FSLR", "First Solar Inc", "RenewableEnergy"], ["MRVL", "Marvell Technology", "Semiconductors"],
+  ["MU", "Micron Technology", "Semiconductors"], ["LRCX", "Lam Research Corp", "Semiconductors"],
+  ["AMAT", "Applied Materials", "Semiconductors"], ["KLAC", "KLA Corp", "Semiconductors"],
+  ["ADI", "Analog Devices Inc", "Semiconductors"], ["NXPI", "NXP Semiconductors", "Semiconductors"],
+  ["GILD", "Gilead Sciences Inc", "Pharma"], ["AMGN", "Amgen Inc", "Pharma"],
+  ["LLY", "Eli Lilly & Co", "Pharma"], ["ABBV", "AbbVie Inc", "Pharma"],
+  ["MCD", "McDonald's Corp", "Food"], ["SBUX", "Starbucks Corp", "Food"],
+  ["CMG", "Chipotle Mexican Grill", "Food"], ["LOW", "Lowe's Companies", "Retail"],
+  ["TGT", "Target Corp", "Retail"], ["TJX", "TJX Companies Inc", "Retail"],
+  ["LMT", "Lockheed Martin Corp", "Defense"], ["RTX", "RTX Corp", "Defense"],
+  ["NOC", "Northrop Grumman Corp", "Defense"], ["GD", "General Dynamics Corp", "Defense"],
+  ["UPS", "United Parcel Service", "Logistics"], ["FDX", "FedEx Corp", "Logistics"],
+  ["UNP", "Union Pacific Corp", "Logistics"], ["DAL", "Delta Air Lines", "Travel"],
+  ["UAL", "United Airlines Holdings", "Travel"], ["LUV", "Southwest Airlines", "Travel"],
+  ["MAR", "Marriott International", "Travel"], ["BKNG", "Booking Holdings", "Travel"],
+  ["SPGI", "S&P Global Inc", "Finance"], ["MCO", "Moody's Corp", "Finance"],
+  ["ICE", "Intercontinental Exchange", "Finance"], ["CME", "CME Group Inc", "Finance"],
+  ["NDAQ", "Nasdaq Inc", "Finance"], ["MDT", "Medtronic plc", "Healthcare"],
+  ["ISRG", "Intuitive Surgical Inc", "Healthcare"], ["SYK", "Stryker Corp", "Healthcare"],
+  ["BSX", "Boston Scientific Corp", "Healthcare"], ["NEM", "Newmont Corp", "Mining"],
+  ["FCX", "Freeport-McMoRan Inc", "Mining"], ["NUE", "Nucor Corp", "Steel"],
+  ["SHW", "Sherwin-Williams Co", "Materials"], ["PPG", "PPG Industries Inc", "Materials"],
+  ["LYB", "LyondellBasell Industries", "Materials"], ["ECL", "ECOLAB Inc", "Materials"],
+  ["APD", "Air Products & Chemicals", "Materials"], ["NEM2", "Newmont Goldcorp", "Mining"],
+  ["RIO", "Rio Tinto Group", "Mining"], ["BHP", "BHP Group Ltd", "Mining"],
+  ["MMM", "3M Co", "Industrial"], ["HON", "Honeywell International", "Industrial"],
+  ["ROK", "Rockwell Automation", "Industrial"], ["PH", "Parker-Hannifin Corp", "Industrial"],
+  ["ITW", "Illinois Tool Works", "Industrial"], ["EMR", "Emerson Electric", "Industrial"],
+  ["DOV", "Dover Corp", "Industrial"], ["ETN", "Eaton Corp", "Industrial"],
+  ["FLS", "Flowserve Corp", "Industrial"], ["GWW", "W.W. Grainger Inc", "Industrial"],
+  ["FAST", "Fastenal Co", "Industrial"], ["XYL", "Xylem Inc", "Industrial"],
+  ["PNR", "Pentair plc", "Industrial"], ["SPXC", "SPX Technologies", "Industrial"],
+  ["B", "Baker Hughes Co", "Energy"], ["SLB", "Schlumberger NV", "Energy"],
+  ["HAL", "Halliburton Co", "Energy"], ["NOV", "NOV Inc", "Energy"],
+  ["WMB", "Williams Companies", "Energy"], ["KMI", "Kinder Morgan", "Energy"],
+  ["EPAM", "EPAM Systems", "Technology"], ["GLOB", "Globant SA", "Technology"],
+  ["WIT", "Wipro Ltd ADR", "Technology"], ["INFY2", "Infosys ADR", "Technology"],
+  ["VECO", "Veeco Instruments", "Semiconductors"], ["ONTI", "Onto Innovation", "Semiconductors"],
+  ["UCTT", "Ultra Clean Holdings", "Semiconductors"], ["ACMR", "ACM Research", "Semiconductors"],
+  ["CAMT", "Camtek Ltd", "Semiconductors"], ["KRNT", "Kornit Digital", "Industrial"],
+  ["PLAB", "Photronics Inc", "Semiconductors"], ["OSIS", "OSI Systems", "Technology"],
+  ["FN", "Fabrinet", "Industrial"], ["IPG", "IPG Photonics", "Industrial"],
+  ["COHR", "Coherent Corp", "Industrial"], ["LITE", "Lumentum Holdings", "Industrial"],
+  ["AAOI", "Applied Optoelectronics", "Industrial"], ["NLTX", "Neoleukin Therapeutics", "Biotech"],
+  ["VRDN", "Veraderm Sciences", "Pharma"], ["DNLI", "Denali Therapeutics", "Biotech"],
+  ["SRNE", "Sorrento Therapeutics", "Biotech"], ["RCKT", "Rocket Pharmaceuticals", "Biotech"],
+  ["PTGX", "Protagonist Therapeutics", "Biotech"], ["ARWR", "Arrowhead Pharmaceuticals", "Biotech"],
+  ["DRNA", "Dicerna Pharmaceuticals", "Biotech"], ["ALNY", "Alnylam Pharmaceuticals", "Biotech"],
+  ["BMRN", "BioMarin Pharmaceutical", "Biotech"], ["BLUE", "bluebird bio", "Biotech"],
+  ["CRSP", "CRISPR Therapeutics", "Biotech"], ["EDIT", "Editas Medicine", "Biotech"],
+  ["NTLA", "Intellia Therapeutics", "Biotech"], ["BEAM", "Beam Therapeutics", "Biotech"],
+  ["PRME", "Prime Medicine", "Biotech"], ["VRTX", "Vertex Pharmaceuticals", "Pharma"],
+  ["BMY", "Bristol-Myers Squibb", "Pharma"], ["SNY", "Sanofi ADR", "Pharma"],
+  ["NVS", "Novartis ADR", "Pharma"], ["AZN", "AstraZeneca ADR", "Pharma"],
+  ["GSK", "GSK plc ADR", "Pharma"], ["ROG", "Roche ADR", "Pharma"],
 ];
 
-import { GENERATED_UNIVERSE } from './universeGenerator';
+const GLOBAL_STOCKS: [string, string, Sector, Region, Exchange][] = [
+  ["TM", "Toyota Motor Corp", "Automotive", "Japan", "TSE"],
+  ["SNE", "Sony Group Corp", "Technology", "Japan", "TSE"],
+  ["NTDOY", "Nintendo Co Ltd", "Gaming", "Japan", "TSE"],
+  ["005930", "Samsung Electronics", "Semiconductors", "Korea", "KRX"],
+  ["TSM", "Taiwan Semiconductor", "Semiconductors", "Taiwan", "TPEX"],
+  ["HSBC", "HSBC Holdings plc", "Finance", "HongKong", "HKEX"],
+  ["TTE", "TotalEnergies SE", "Energy", "Europe", "EURONEXT"],
+  ["SHEL", "Shell plc", "Energy", "Europe", "LSE"],
+  ["SAP", "SAP SE", "Technology", "Germany", "XETR"],
+  ["SIE", "Siemens AG", "Industrial", "Germany", "XETR"],
+  ["AIR", "Airbus SE", "Aerospace", "Europe", "EURONEXT"],
+  ["MC", "LVMH Moet Hennessy", "Consumer", "France", "EURONEXT"],
+  ["OR", "L'Oreal SA", "Consumer", "France", "EURONEXT"],
+  ["NESN", "Nestle SA", "Food", "Switzerland", "SIX"],
+  ["NOVN", "Novartis AG", "Pharma", "Switzerland", "SIX"],
+  ["ROG", "Roche Holding AG", "Pharma", "Switzerland", "SIX"],
+  ["ASML", "ASML Holding NV", "Semiconductors", "Europe", "EURONEXT"],
+  ["ING", "ING Groep NV", "Finance", "Netherlands", "EURONEXT"],
+  ["CBA", "Commonwealth Bank of Australia", "Finance", "Australia", "ASX"],
+  ["CSL", "CSL Limited", "Healthcare", "Australia", "ASX"],
+  ["BABA", "Alibaba Group", "ECommerce", "China", "HKEX"],
+  ["TCEHY", "Tencent Holdings", "Technology", "China", "HKEX"],
+  ["PDD", "PDD Holdings Inc", "ECommerce", "China", "NASDAQ"],
+  ["JD", "JD.com Inc", "ECommerce", "China", "NASDAQ"],
+  ["BIDU", "Baidu Inc", "Technology", "China", "NASDAQ"],
+  ["NIO", "NIO Inc", "EV", "China", "NYSE"],
+  ["XPEV", "XPeng Inc", "EV", "China", "NYSE"],
+  ["LI", "Li Auto Inc", "EV", "China", "NASDAQ"],
+  ["SE", "Sea Limited", "ECommerce", "Singapore", "SGX"],
+  ["DBS", "DBS Group Holdings", "Finance", "Singapore", "SGX"],
+  ["VALE", "Vale SA", "Mining", "Brazil", "BVMF"],
+  ["PETR4", "Petrobras", "Energy", "Brazil", "BVMF"],
+  ["ABEV", "Ambev SA", "Consumer", "Brazil", "BVMF"],
+  ["ITUB", "Itau Unibanco", "Finance", "Brazil", "BVMF"],
+  ["2222", "Saudi Aramco", "Energy", "SaudiArabia", "TADAWUL"],
+  ["THYAO", "Turkish Airlines", "Travel", "Turkey", "BIST"],
+  ["BBCA", "Bank Central Asia", "Finance", "Indonesia", "IDX"],
+  ["PTT", "PTT Public Co", "Energy", "Thailand", "SET"],
+  ["MBB", "Maybank", "Finance", "Malaysia", "KLSE"],
+  ["JFC", "Jollibee Foods", "Food", "Philippines", "PSE"],
+  ["VNM", "Vinamilk", "Food", "Vietnam", "HOSE"],
+  ["600519", "Kweichow Moutai", "Consumer", "China", "SSE"],
+  ["601318", "Ping An Insurance", "Finance", "China", "SSE"],
+  ["601398", "ICBC", "Finance", "China", "SSE"],
+  ["002594", "BYD Co Ltd", "EV", "China", "SSE"],
+  ["5880", "AIA Group Ltd", "Finance", "HongKong", "HKEX"],
+  ["9988", "Alibaba Group", "ECommerce", "China", "HKEX"],
+  ["3690", "Meituan", "ECommerce", "China", "HKEX"],
+  ["1810", "Xiaomi Corp", "Technology", "China", "HKEX"],
+  ["2317", "Foxconn Technology", "Semiconductors", "Taiwan", "TPEX"],
+  ["2454", "MediaTek Inc", "Semiconductors", "Taiwan", "TPEX"],
+];
 
-const _seen = new Set(STOCK_UNIVERSE.map((s) => s.symbol));
-for (const s of GENERATED_UNIVERSE) {
-  if (!_seen.has(s.symbol)) {
-    _seen.add(s.symbol);
-    STOCK_UNIVERSE.push(s);
+const REGIONS: { region: Region; prefix: string; roots: string[] }[] = [
+  { region: "India", prefix: "IN", roots: ["Bharat", "Indic", "Hindustan", "Arya", "Vedic", "Navya", "Surya", "Prithvi", "Akash", "Vayu", "Agni", "Jal", "Tej", "Ojas", "Tapas"] },
+  { region: "USA", prefix: "US", roots: ["Ameri", "Global", "Prime", "Apex", "Vertex", "Summit", "Pioneer", "Frontier", "Liberty", "Eagle", "Hawk", "Falcon", "Condor", "Raven", "Phoenix"] },
+  { region: "Europe", prefix: "EU", roots: ["Euro", "Nordic", "Alpine", "Rhein", "Iberia", "Gaul", "Britan", "Hiber", "Vene", "Lombard", "Tuscan", "Norman", "Celtic", "Saxon", "Viking"] },
+  { region: "Japan", prefix: "JP", roots: ["Nihon", "Zen", "Sakura", "Fuji", "Kanto", "Kansai", "Tokai", "Hokkai", "Kyushu", "Shikoku", "Tohoku", "Chubu", "Setouchi", "Sanin", "Sanjo"] },
+  { region: "China", prefix: "CN", roots: ["Hua", "Long", "Tian", "Shen", "Jin", "Yu", "Xiang", "Hai", "Jiang", "Shan", "He", "Yun", "Feng", "Xue", "Yue"] },
+  { region: "HongKong", prefix: "HK", roots: ["Hong", "Kowloon", "Victoria", "Pearl", "Orient", "Jade", "Dragon", "Lotus", "Bauhinia", "Harbor", "Central", "Admiralty", "Wanchai", "Tsim", "Mong"] },
+  { region: "Australia", prefix: "AU", roots: ["Aussie", "Outback", "Coral", "Kangaroo", "Wallaby", "Koala", "Emu", "Platypus", "Kookaburra", "Boomerang", "Didgeridoo", "Billabong", "Bushland", "Reef", "Sunset"] },
+  { region: "Canada", prefix: "CA", roots: ["Maple", "Northwind", "Aurora", "Frontier", "Tundra", "Beaver", "Moose", "Loon", "Canuck", "TrueNorth", "StrongFree", "Rocky", "Pacific", "Atlantic", "Prairie"] },
+  { region: "Korea", prefix: "KR", roots: ["Han", "Kyo", "Sae", "Jin", "Myung", "Dong", "Seoul", "Busan", "Incheon", "Daegu", "Gwangju", "Daejeon", "Ulsan", "Jeju", "Suwon"] },
+  { region: "Taiwan", prefix: "TW", roots: ["Tai", "Formosa", "Yushan", "Taroko", "SunMoon", "Kenting", "Alishan", "Penghu", "Kinmen", "Matsu", "Taitung", "Hualien", "Nantou", "Chiayi", "Pingtung"] },
+  { region: "Singapore", prefix: "SG", roots: ["Singa", "Merlion", "Lion", "Marina", "Sentosa", "Orchard", "Raffles", "Bukit", "Tanjong", "Changi", "Jurong", "Woodlands", "Tampines", "Pasir", "Punggol"] },
+  { region: "Brazil", prefix: "BR", roots: ["Brasil", "Amazon", "Carnival", "Samba", "Tropical", "Cerrado", "Pantanal", "Ipanema", "Copacabana", "Tijuca", "Iguacu", "Caatinga", "Pampas", "Atlantis", "Cristal"] },
+  { region: "Mexico", prefix: "MX", roots: ["Mexica", "Aztec", "Maya", "Olme", "Tolte", "Zapote", "Mixte", "Tarasco", "Chichime", "Purepe", "Huicho", "Tarahuma", "Yaqui", "Mayo", "Opata"] },
+  { region: "SouthAfrica", prefix: "ZA", roots: ["Ubuntu", "Buntu", "Madiba", "Springbok", "Protea", "Jacaranda", "Baobab", "Acacia", "Savanna", "Veld", "Karoo", "Highveld", "Lowveld", "Bushveld", "Coastal"] },
+  { region: "SaudiArabia", prefix: "SA", roots: ["Saudi", "Najd", "Hijaz", "Asir", "EmptyQuarter", "RubAlKhali", "Dahna", "Hejaz", "Tiham", "Nejd", "Yamama", "Qassim", "Hail", "Jizan", "Najran"] },
+  { region: "UAE", prefix: "AE", roots: ["Emir", "Dubai", "AbuDhabi", "Sharjah", "Ajman", "Fujair", "RasAl", "UmmAl", "Liwa", "AlAin", "Ruwais", "Jebel", "Khalifa", "Yas", "Saadiyat"] },
+  { region: "Turkey", prefix: "TR", roots: ["Turk", "Anatolia", "Bosphorus", "Marmara", "Aegean", "Med", "BlackSea", "Cappadocia", "Pamukkale", "Konya", "Antalya", "Izmir", "Bursa", "Edirne", "Trabzon"] },
+  { region: "Indonesia", prefix: "ID", roots: ["Nusa", "Garuda", "Komodo", "Bali", "Java", "Sumatra", "Kalimantan", "Sulawesi", "Papua", "Maluku", "Lombok", "Flores", "Sumbawa", "Sumba", "Timor"] },
+  { region: "Thailand", prefix: "TH", roots: ["Thai", "Siam", "Chao", "Mekong", "ChaoPhraya", "Andaman", "Gulf", "Krabi", "Phuket", "Chiang", "Isan", "Lanna", "Sukho", "Ayut", "Lop"] },
+  { region: "Malaysia", prefix: "MY", roots: ["Malay", "Borneo", "Sarawak", "Sabah", "Selangor", "Johor", "Penang", "Perak", "Kedah", "Kelantan", "Terengganu", "Pahang", "Negeri", "Melaka", "Perlis"] },
+  { region: "Philippines", prefix: "PH", roots: ["Pili", "Luzon", "Visayas", "Mindanao", "Palawan", "Sulu", "Panay", "Negros", "Cebu", "Bohol", "Leyte", "Samar", "Masbate", "Catanduanes", "Marinduque"] },
+  { region: "Vietnam", prefix: "VN", roots: ["Viet", "Hanoi", "Saigon", "Mekong", "Red", "Halong", "Perfume", "Hue", "Danang", "Nha", "Dalat", "Phan", "Cantho", "Haiphong", "Quang"] },
+  { region: "Bangladesh", prefix: "BD", roots: ["Bengal", "Padma", "Meghna", "Jamuna", "Ganges", "Sundar", "Chittagong", "Sylhet", "Rajshahi", "Khulna", "Barisal", "Rangpur", "Mymen", "Comilla", "Dinajpur"] },
+  { region: "SriLanka", prefix: "LK", roots: ["Lanka", "Ceylon", "Serendib", "Pearl", "Colombo", "Kandy", "Galle", "Jaffna", "Anura", "Polon", "Sigiri", "Dambulla", "Trinco", "Negombo", "Matara"] },
+  { region: "Egypt", prefix: "EG", roots: ["Nile", "Cairo", "Giza", "Alex", "Sphinx", "Pharaoh", "Pyramid", "Oasis", "Sahara", "Suez", "Aswan", "Luxor", "Thebes", "Memphis", "Saqqara"] },
+  { region: "Russia", prefix: "RU", roots: ["Rus", "Siberia", "Ural", "Volga", "Don", "Lena", "Ob", "Yenisei", "Amur", "Kamchatka", "Baikal", "Caucasus", "Tundra", "Taiga", "Steppe"] },
+  { region: "Poland", prefix: "PL", roots: ["Polska", "Vistula", "Warsaw", "Krakow", "Gdansk", "Wroclaw", "Poznan", "Lodz", "Lublin", "Bialystok", "Szczecin", "Katowice", "Torun", "Lubusz", "Podlasie"] },
+  { region: "Sweden", prefix: "SE", roots: ["Svea", "Nord", "Malm", "Stock", "Gote", "Uppsa", "Lund", "Link", "Vaster", "Ore", "Helsing", "Norr", "Lapland", "Baltic", "Bothnian"] },
+  { region: "Spain", prefix: "ES", roots: ["Iberia", "Madrid", "Barca", "Sevilla", "Valencia", "Bilbao", "Malaga", "Granada", "Cordoba", "Toledo", "Sarago", "Vallad", "Murcia", "Palma", "Vigo"] },
+  { region: "Italy", prefix: "IT", roots: ["Roma", "Milano", "Napoli", "Torino", "Firenze", "Venezia", "Genova", "Bologna", "Verona", "Pisa", "Siena", "Lucca", "Perugia", "Bari", "Palermo"] },
+  { region: "Germany", prefix: "DE", roots: ["Germania", "Rhein", "Elbe", "Danube", "Bavaria", "Saxony", "Prussia", "Hesse", "Ruhr", "Schwarzwald", "Bayer", "Frankfurt", "Munich", "Hamburg", "Cologne"] },
+  { region: "France", prefix: "FR", roots: ["Gaul", "Seine", "Loire", "Rhone", "Brittany", "Normandy", "Provence", "Corsica", "Burgundy", "Champagne", "Aquitaine", "Languedoc", "Picardy", "Anjou", "Orleans"] },
+  { region: "Netherlands", prefix: "NL", roots: ["Dutch", "Amstel", "Rhine", "Maas", "Scheldt", "Fries", "Holland", "Zeeland", "Utrecht", "Gelder", "Limburg", "Brabant", "Overijs", "Drenthe", "Gronin"] },
+  { region: "Switzerland", prefix: "CH", roots: ["Helvetia", "Alps", "Rhine", "Rhone", "Ticino", "Inn", "Bern", "Zurich", "Geneva", "Basel", "Lucerne", "Lugano", "StMoritz", "Davos", "Interlaken"] },
+];
+
+const SECTORS_LIST: Sector[] = [
+  "Technology", "AI", "Finance", "Healthcare", "Energy", "Consumer", "Industrial", "Materials",
+  "Utilities", "RealEstate", "Communication", "Semiconductors", "EV", "Fintech", "Biotech",
+  "Robotics", "CloudComputing", "Cybersecurity", "QuantumComputing", "RenewableEnergy",
+  "ECommerce", "EdTech", "AgriTech", "SpaceTech", "Logistics", "Media", "Gaming", "Travel",
+  "Food", "Retail", "Automotive", "Aerospace", "Defense", "Pharma", "Chemicals", "Construction",
+  "Mining", "Steel", "Textiles", "Telecom",
+];
+
+const SUFFIXES = ["Corp", "Inc", "Ltd", "Group", "Holdings", "Industries", "Technologies", "Systems", "Global", "International", "Ventures", "Partners", "Solutions", "Dynamics", "Enterprises"];
+
+function buildStocks(): StockMeta[] {
+  const stocks: StockMeta[] = [];
+  for (const s of INDIAN_STOCKS) {
+    stocks.push({ symbol: s.sym, name: s.name, exchange: "NSE", region: "India", sector: s.sec });
   }
+  for (const [sym, name, sec] of US_STOCKS) {
+    stocks.push({ symbol: sym, name, exchange: sym.length <= 4 ? "NASDAQ" : "NYSE", region: "USA", sector: sec });
+  }
+  for (const [sym, name, sec, reg, ex] of GLOBAL_STOCKS) {
+    stocks.push({ symbol: sym, name, exchange: ex, region: reg, sector: sec });
+  }
+  let aiCount = 0;
+  const aiSectors: Sector[] = ["AI", "Robotics", "CloudComputing", "Cybersecurity", "QuantumComputing", "Biotech", "Semiconductors", "EV", "RenewableEnergy", "Fintech"];
+  for (const r of REGIONS) {
+    for (const root of r.roots) {
+      for (const suf of SUFFIXES) {
+        if (aiCount >= 1050) break;
+        const sym = `${r.prefix}-AI${aiCount}`;
+        const name = `${root} AI ${suf}`;
+        stocks.push({ symbol: sym, name, exchange: "VIRTUAL", region: r.region, sector: aiSectors[aiCount % aiSectors.length], isAI: true });
+        aiCount++;
+      }
+      if (aiCount >= 1050) break;
+    }
+    if (aiCount >= 1050) break;
+  }
+  return stocks;
 }
 
-export const REGIONS: Region[] = Array.from(new Set(STOCK_UNIVERSE.map((s) => s.region)));
-export const SECTORS: Sector[] = Array.from(new Set(STOCK_UNIVERSE.map((s) => s.sector)));
-export const EXCHANGES: Exchange[] = Array.from(new Set(STOCK_UNIVERSE.map((s) => s.exchange)));
+export const REAL_STOCKS: StockMeta[] = buildStocks();
+export const TOTAL_STOCKS = VIRTUAL_UNIVERSE_SIZE;
+export const TOTAL_AI_COMPANIES = 1050;
+
+const symbolMap = new Map<string, StockMeta>();
+for (const s of REAL_STOCKS) symbolMap.set(s.symbol, s);
+
+export function getMeta(symbol: string): StockMeta | undefined { return symbolMap.get(symbol); }
+
+export function searchStocks(query: string, limit = 20): StockMeta[] {
+  const q = query.toUpperCase();
+  const results: StockMeta[] = [];
+  for (const s of REAL_STOCKS) {
+    if (s.symbol.includes(q) || s.name.toUpperCase().includes(q)) {
+      results.push(s);
+      if (results.length >= limit) return results;
+    }
+  }
+  return results;
+}
+
+export function getStockPage(offset: number, limit: number): StockMeta[] {
+  if (offset < REAL_STOCKS.length) return REAL_STOCKS.slice(offset, offset + limit);
+  const page: StockMeta[] = [];
+  for (let i = 0; i < limit; i++) page.push(getMetaByIndex(offset + i));
+  return page;
+}
+
+export function getMetaByIndex(idx: number): StockMeta {
+  if (idx < REAL_STOCKS.length) return REAL_STOCKS[idx];
+  const vIdx = idx - REAL_STOCKS.length;
+  const regionIdx = vIdx % REGIONS.length;
+  const r = REGIONS[regionIdx];
+  const secIdx = (vIdx >> 5) % SECTORS_LIST.length;
+  const sec = SECTORS_LIST[secIdx];
+  const sym = `V${vIdx}`;
+  const name = `${r.roots[vIdx % r.roots.length]} ${SUFFIXES[vIdx % SUFFIXES.length]}`;
+  return { symbol: sym, name, exchange: "VIRTUAL", region: r.region, sector: sec, isVirtual: true, index: idx };
+}
+
+export const ALL_REGIONS: Region[] = REGIONS.map((r) => r.region);
+export const ALL_SECTORS: Sector[] = SECTORS_LIST;

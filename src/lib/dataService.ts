@@ -1,272 +1,163 @@
-import type {
-  StockMeta, Quote, Candle, Fundamentals,
-  IncomeStatement, BalanceSheet, CashFlow, Timeframe,
-} from './types';
-import { STOCK_UNIVERSE } from './universe';
+import type { Quote, Candle, Fundamentals, IncomeStatement, BalanceSheet, CashFlow, StockMeta } from "./types";
+import { getMeta, REAL_STOCKS, getMetaByIndex } from "./universe";
 
-// --- Deterministic PRNG (mulberry32) seeded from the symbol string ---
-function hashString(s: string): number {
-  let h = 1779033703 ^ s.length;
-  for (let i = 0; i < s.length; i++) {
-    h = Math.imul(h ^ s.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
-  }
+function fnv1a(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
+
 function mulberry32(seed: number) {
   let a = seed;
-  return () => {
-    a |= 0; a = (a + 0x6d2b79f5) | 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-const metaBySymbol = new Map(STOCK_UNIVERSE.map((s) => [s.symbol, s]));
+function rng(symbol: string) { return mulberry32(fnv1a(symbol)); }
 
-export function getMeta(symbol: string): StockMeta | undefined {
-  return metaBySymbol.get(symbol);
-}
-
-export function searchStocks(q: string): StockMeta[] {
-  const query = q.trim().toLowerCase();
-  if (!query) return STOCK_UNIVERSE.slice(0, 24);
-  return STOCK_UNIVERSE.filter(
-    (s) =>
-      s.symbol.toLowerCase().includes(query) ||
-      s.name.toLowerCase().includes(query) ||
-      s.exchange.toLowerCase().includes(query) ||
-      s.region.toLowerCase().includes(query),
-  ).slice(0, 50);
-}
-
-// Base price scale per region to keep numbers realistic.
-function basePriceFor(meta: StockMeta, rng: () => number): number {
-  const ranges: Record<string, [number, number]> = {
-    INR: [120, 4200], USD: [25, 950], EUR: [20, 900], GBP: [120, 9500],
-    JPY: [1200, 52000], HKD: [30, 480], CNY: [12, 1800], KRW: [40000, 900000],
-    AUD: [12, 160], CAD: [25, 320], CHF: [40, 1100], SEK: [60, 520],
-    BRL: [8, 120], SAR: [10, 200], AED: [3, 60], TRY: [20, 800], ZAR: [40, 900],
-    NGN: [20, 600], PLN: [40, 600], DKK: [80, 1200], TWD: [50, 1500], SGD: [3, 80],
-  };
-  const [lo, hi] = ranges[meta.currency] ?? [20, 500];
-  return +(lo + rng() * (hi - lo)).toFixed(2);
-}
-
-function driftFor(_meta: StockMeta, rng: () => number): number {
-  // Slight positive long-term drift with per-stock variation.
-  return 0.0004 + (rng() - 0.5) * 0.0012;
-}
-
-function volFor(_meta: StockMeta, rng: () => number): number {
-  return 0.012 + rng() * 0.028;
-}
-
-const TF_DAYS: Record<Timeframe, number> = {
-  '1D': 1, '1W': 7, '1M': 30, '3M': 90, '6M': 180, '1Y': 365, '5Y': 1825, MAX: 3650,
-};
-
-export function getCandles(symbol: string, tf: Timeframe = '1Y'): Candle[] {
+function basePrice(symbol: string): number {
+  const r = rng(symbol);
   const meta = getMeta(symbol);
-  if (!meta) return [];
-  const rng = mulberry32(hashString(symbol + '|' + tf));
-  const days = TF_DAYS[tf];
-  const stepMs = tf === '1D' ? 5 * 60 * 1000 : tf === '1W' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-  const count = tf === '1D' ? 78 : tf === '1W' ? 168 : Math.min(days, 730);
-  const start = Date.now() - days * 24 * 60 * 60 * 1000;
+  if (meta) {
+    if (meta.region === "India") return 50 + r() * 4000;
+    if (meta.region === "USA") return 10 + r() * 500;
+  }
+  return 1 + r() * 1000;
+}
 
-  const drift = driftFor(meta, rng);
-  const vol = volFor(meta, rng);
-  let price = basePriceFor(meta, rng) * 0.7; // start lower so series trends up
-  const out: Candle[] = [];
+const quoteCache = new Map<string, Quote>();
+const candleCache = new Map<string, Candle[]>();
+const fundCache = new Map<string, Fundamentals>();
+
+export function getQuote(symbol: string): Quote {
+  if (quoteCache.has(symbol)) return quoteCache.get(symbol)!;
+  const r = rng(symbol);
+  const price = basePrice(symbol);
+  const change = (r() - 0.48) * price * 0.05;
+  const changePct = (change / price) * 100;
+  const volume = Math.floor(r() * 10000000) + 100000;
+  const marketCap = price * (Math.floor(r() * 100000000) + 1000000);
+  const high52 = price * (1 + r() * 0.5);
+  const low52 = price * (1 - r() * 0.4);
+  const open = price * (1 + (r() - 0.5) * 0.02);
+  const prevClose = price - change;
+  const dayHigh = Math.max(price, open) * (1 + r() * 0.01);
+  const dayLow = Math.min(price, open) * (1 - r() * 0.01);
+  const pe = 5 + r() * 50;
+  const pb = 0.5 + r() * 10;
+  const divYield = r() * 5;
+  const beta = 0.3 + r() * 1.7;
+  const q: Quote = { symbol, price, change, changePct, volume, marketCap, high52, low52, open, prevClose, dayHigh, dayLow, pe, pb, divYield, beta };
+  quoteCache.set(symbol, q);
+  return q;
+}
+
+let liveInterval: ReturnType<typeof setInterval> | null = null;
+const liveQuotes = new Map<string, Quote>();
+
+export function startLiveUpdates() {
+  if (liveInterval) return;
+  liveInterval = setInterval(() => {
+    for (const [sym, q] of liveQuotes) {
+      const drift = (Math.random() - 0.5) * q.price * 0.003;
+      const newPrice = Math.max(0.01, q.price + drift);
+      const newChange = newPrice - q.prevClose;
+      liveQuotes.set(sym, { ...q, price: newPrice, change: newChange, changePct: (newChange / q.prevClose) * 100, dayHigh: Math.max(q.dayHigh, newPrice), dayLow: Math.min(q.dayLow, newPrice) });
+    }
+  }, 2000);
+}
+
+export function getLiveQuote(symbol: string): Quote {
+  if (!liveQuotes.has(symbol)) { const base = getQuote(symbol); liveQuotes.set(symbol, { ...base }); }
+  return liveQuotes.get(symbol)!;
+}
+
+export function getCandles(symbol: string, timeframe: string = "3M"): Candle[] {
+  const key = `${symbol}-${timeframe}`;
+  if (candleCache.has(key)) return candleCache.get(key)!;
+  const r = rng(symbol + timeframe);
+  const tfMap: Record<string, number> = { "1D": 24, "1W": 7, "1M": 30, "3M": 90, "6M": 180, "1Y": 365, "5Y": 1825 };
+  const count = tfMap[timeframe] ?? 90;
+  const base = basePrice(symbol);
+  const candles: Candle[] = [];
+  let price = base * (0.7 + r() * 0.3);
+  const now = Date.now();
+  const interval = (5 * 365 * 24 * 60 * 60 * 1000) / count;
   for (let i = 0; i < count; i++) {
-    const t = start + i * stepMs;
-    const shock = (rng() - 0.5) * 2 * vol;
-    const ret = drift + shock;
     const o = price;
-    const c = Math.max(0.01, +(o * (1 + ret)).toFixed(2));
-    const intraday = Math.abs(rng() - 0.5) * 2 * vol * o;
-    const h = +(Math.max(o, c) + intraday * 0.6).toFixed(2);
-    const l = +(Math.min(o, c) - intraday * 0.6).toFixed(2);
-    const v = Math.floor((0.4 + rng()) * 4_000_000);
-    out.push({ t, o, h, l, c, v });
+    const change = (r() - 0.48) * price * 0.03;
+    const c = Math.max(0.01, o + change);
+    const h = Math.max(o, c) * (1 + r() * 0.01);
+    const l = Math.min(o, c) * (1 - r() * 0.01);
+    const v = Math.floor(r() * 5000000) + 100000;
+    candles.push({ t: now - (count - i) * interval, o, h, l, c, v });
     price = c;
   }
-  return out;
+  candleCache.set(key, candles);
+  return candles;
 }
 
-export function getQuote(symbol: string): Quote | null {
-  const meta = getMeta(symbol);
-  if (!meta) return null;
-  const rng = mulberry32(hashString(symbol + '|q'));
-  const series = getCandles(symbol, '1Y');
-  if (!series.length) return null;
-  const last = series[series.length - 1];
-  const prev = series[series.length - 2] ?? last;
-  const change = +(last.c - prev.c).toFixed(2);
-  const changePct = +((change / prev.c) * 100).toFixed(2);
-  const yearHigh = Math.max(...series.slice(-252).map((c) => c.h));
-  const yearLow = Math.min(...series.slice(-252).map((c) => c.l));
-  const sharesOut = Math.floor((50 + rng() * 9500) * 1_000_000);
-  const marketCap = last.c * sharesOut;
-  const eps = +((last.c * (0.04 + rng() * 0.08))).toFixed(2);
-  const pe = +(last.c / Math.max(0.01, eps)).toFixed(2);
-  return {
-    symbol,
-    price: last.c,
-    change,
-    changePct,
-    prevClose: prev.c,
-    open: last.o,
-    dayHigh: last.h,
-    dayLow: last.l,
-    yearHigh: +yearHigh.toFixed(2),
-    yearLow: +yearLow.toFixed(2),
-    volume: last.v,
-    avgVolume: Math.floor(last.v * (0.8 + rng() * 0.4)),
-    marketCap,
-    pe,
-    eps,
-    beta: +(0.5 + rng() * 1.4).toFixed(2),
-    dividendYield: +(rng() * 0.045).toFixed(4),
-    asOf: new Date(last.t).toISOString(),
+export function getFundamentals(symbol: string): Fundamentals {
+  if (fundCache.has(symbol)) return fundCache.get(symbol)!;
+  const r = rng(symbol + "fund");
+  const revenue = Math.floor(r() * 100000000000) + 1000000000;
+  const netIncome = revenue * (0.05 + r() * 0.25);
+  const f: Fundamentals = {
+    revenue, revenueGrowth: (r() - 0.3) * 40, netIncome, netMargin: (netIncome / revenue) * 100,
+    debtToEquity: r() * 3, roe: 5 + r() * 35, roa: 2 + r() * 15,
+    currentRatio: 0.8 + r() * 3, quickRatio: 0.5 + r() * 2.5,
+    grossMargin: 15 + r() * 60, operatingMargin: 5 + r() * 30,
+    eps: 1 + r() * 50, bookValue: 10 + r() * 500,
+    freeCashFlow: netIncome * (0.5 + r() * 1.5), payoutRatio: r() * 80, pegRatio: 0.5 + r() * 4,
   };
-}
-
-export function getFundamentals(symbol: string): Fundamentals | null {
-  const q = getQuote(symbol);
-  if (!q) return null;
-  const rng = mulberry32(hashString(symbol + '|f'));
-  const margin = (lo: number, hi: number) => +(lo + rng() * (hi - lo)).toFixed(3);
-  const roe = margin(0.05, 0.42);
-  const netMargin = margin(0.04, 0.28);
-  const operatingMargin = netMargin + margin(0.02, 0.12);
-  const grossMargin = operatingMargin + margin(0.1, 0.4);
-  return {
-    symbol,
-    pe: q.pe,
-    forwardPe: +(q.pe * (0.85 + rng() * 0.2)).toFixed(2),
-    peg: +(0.6 + rng() * 2.4).toFixed(2),
-    ps: +(1 + rng() * 9).toFixed(2),
-    pb: +(0.8 + rng() * 6).toFixed(2),
-    evEbitda: +(6 + rng() * 18).toFixed(2),
-    roe,
-    roa: +(roe * (0.3 + rng() * 0.3)).toFixed(3),
-    roic: +(roe * (0.6 + rng() * 0.3)).toFixed(3),
-    grossMargin,
-    operatingMargin,
-    netMargin,
-    debtToEquity: +(rng() * 1.6).toFixed(2),
-    currentRatio: +(1 + rng() * 2).toFixed(2),
-    quickRatio: +(0.6 + rng() * 1.4).toFixed(2),
-    revenueGrowth: +((rng() - 0.3) * 0.4).toFixed(3),
-    earningsGrowth: +((rng() - 0.2) * 0.5).toFixed(3),
-    fcfYield: +(0.01 + rng() * 0.07).toFixed(3),
-    payoutRatio: +(rng() * 0.7).toFixed(2),
-    marketCap: q.marketCap,
-    enterpriseValue: +(q.marketCap * (1 + rng() * 0.4)).toFixed(0),
-    sharesOut: Math.floor(q.marketCap / q.price),
-    dividendYield: q.dividendYield,
-    beta: q.beta,
-  };
+  fundCache.set(symbol, f);
+  return f;
 }
 
 export function getIncomeStatements(symbol: string): IncomeStatement[] {
-  const f = getFundamentals(symbol);
-  if (!f) return [];
-  const rng = mulberry32(hashString(symbol + '|inc'));
+  const r = rng(symbol + "income");
+  const baseRev = getFundamentals(symbol).revenue;
   const out: IncomeStatement[] = [];
-  let revenue = f.marketCap / Math.max(1, f.ps);
-  for (let y = 4; y >= 0; y--) {
-    const growth = 1 + (f.revenueGrowth * (0.6 + rng() * 0.8));
-    revenue = y === 4 ? revenue : revenue / growth;
-    const grossProfit = revenue * f.grossMargin;
-    const operatingIncome = revenue * f.operatingMargin;
-    const netIncome = revenue * f.netMargin;
-    const ebitda = operatingIncome * (1.2 + rng() * 0.3);
-    const eps = +(netIncome / f.sharesOut).toFixed(2);
-    out.push({
-      period: `FY${new Date().getFullYear() - y}`,
-      revenue: +revenue.toFixed(0),
-      grossProfit: +grossProfit.toFixed(0),
-      operatingIncome: +operatingIncome.toFixed(0),
-      netIncome: +netIncome.toFixed(0),
-      ebitda: +ebitda.toFixed(0),
-      eps,
-    });
+  for (let i = 4; i >= 0; i--) {
+    const growth = 0.05 + r() * 0.2;
+    const rev = baseRev / Math.pow(1 + growth, i);
+    const cost = rev * (0.4 + r() * 0.3);
+    const gross = rev - cost;
+    const op = gross * (0.6 + r() * 0.2);
+    const net = op * (0.7 + r() * 0.15);
+    out.push({ year: 2024 - i, revenue: rev, costOfRevenue: cost, grossProfit: gross, operatingIncome: op, netIncome: net, eps: net / 10000000 });
   }
   return out;
 }
 
 export function getBalanceSheets(symbol: string): BalanceSheet[] {
-  const f = getFundamentals(symbol);
-  if (!f) return [];
-  const rng = mulberry32(hashString(symbol + '|bs'));
+  const r = rng(symbol + "balance");
+  const baseAssets = getFundamentals(symbol).revenue * 2;
   const out: BalanceSheet[] = [];
-  const equity = f.marketCap / Math.max(0.1, f.pb);
-  const debt = equity * f.debtToEquity;
-  for (let y = 4; y >= 0; y--) {
-    const scale = 1 - y * 0.06;
-    out.push({
-      period: `FY${new Date().getFullYear() - y}`,
-      totalAssets: +((equity + debt) * scale * (0.95 + rng() * 0.1)).toFixed(0),
-      totalLiabilities: +(debt * scale * (1.4 + rng() * 0.3)).toFixed(0),
-      equity: +(equity * scale).toFixed(0),
-      cash: +(equity * scale * (0.1 + rng() * 0.25)).toFixed(0),
-      debt: +(debt * scale).toFixed(0),
-      inventory: +(equity * scale * (0.05 + rng() * 0.15)).toFixed(0),
-      receivables: +(equity * scale * (0.08 + rng() * 0.12)).toFixed(0),
-    });
+  for (let i = 4; i >= 0; i--) {
+    const assets = baseAssets / Math.pow(1.08, i);
+    const liab = assets * (0.3 + r() * 0.4);
+    out.push({ year: 2024 - i, totalAssets: assets, totalLiabilities: liab, equity: assets - liab, totalDebt: liab * 0.5, cash: assets * r() * 0.3 });
   }
   return out;
 }
 
 export function getCashFlows(symbol: string): CashFlow[] {
-  const f = getFundamentals(symbol);
-  const inc = getIncomeStatements(symbol);
-  if (!f || !inc.length) return [];
-  const rng = mulberry32(hashString(symbol + '|cf'));
+  const r = rng(symbol + "cash");
+  const base = getFundamentals(symbol).freeCashFlow;
   const out: CashFlow[] = [];
-  for (const i of inc) {
-    const operatingCf = i.netIncome * (1.1 + rng() * 0.4);
-    const capex = operatingCf * (0.1 + rng() * 0.3);
-    out.push({
-      period: i.period,
-      operatingCf: +operatingCf.toFixed(0),
-      capex: +capex.toFixed(0),
-      freeCf: +(operatingCf - capex).toFixed(0),
-      dividends: +(i.netIncome * f.payoutRatio).toFixed(0),
-      netDebtIssuance: +((rng() - 0.5) * i.netIncome * 0.5).toFixed(0),
-    });
+  for (let i = 4; i >= 0; i--) {
+    const op = base / Math.pow(1.1, i);
+    const inv = -op * (0.3 + r() * 0.4);
+    const fin = -op * (0.1 + r() * 0.2);
+    out.push({ year: 2024 - i, operating: op, investing: inv, financing: fin, freeCashFlow: op + inv });
   }
   return out;
 }
 
-// --- Market overview helpers ---
-export function getMovers() {
-  const quotes = STOCK_UNIVERSE.map((s) => getQuote(s.symbol)!).filter(Boolean);
-  const gainers = [...quotes].sort((a, b) => b.changePct - a.changePct).slice(0, 8);
-  const losers = [...quotes].sort((a, b) => a.changePct - b.changePct).slice(0, 8);
-  const active = [...quotes].sort((a, b) => b.volume - a.volume).slice(0, 8);
-  return { gainers, losers, active };
-}
-
-export function getIndices() {
-  // Synthetic broad indices per region for the market overview header.
-  const byRegion: Record<string, StockMeta[]> = {};
-  for (const s of STOCK_UNIVERSE) {
-    (byRegion[s.region] ??= []).push(s);
-  }
-  return Object.entries(byRegion).map(([region, stocks]) => {
-    const quotes = stocks.map((s) => getQuote(s.symbol)!);
-    const avg = quotes.reduce((a, q) => a + q.changePct, 0) / quotes.length;
-    const level = 1000 + hashString(region) % 9000;
-    return {
-      name: region,
-      level,
-      changePct: +avg.toFixed(2),
-      change: +(level * (avg / 100)).toFixed(2),
-    };
-  });
-}
+export function getStockMeta(symbol: string): StockMeta { return getMeta(symbol) ?? getMetaByIndex(0); }
+export { REAL_STOCKS };

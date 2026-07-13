@@ -1,52 +1,76 @@
-import { useMemo } from 'react';
-import { getLiveQuote, useLiveQuotes } from '../lib/liveFeed';
-import { STOCK_UNIVERSE } from '../lib/universe';
-import { fmtPctRaw } from '../lib/format';
-import { Grid3x3 } from 'lucide-react';
+import { useMemo } from "react";
+import { Grid3x3 } from "lucide-react";
+import { REAL_STOCKS } from "../lib/universe";
+import { getQuote } from "../lib/dataService";
+import type { Quote } from "../lib/types";
 
-interface Props { onOpenStock: (s: string) => void; }
-
-export function Heatmap({ onOpenStock }: Props) {
-  useLiveQuotes();
-
-
+export function Heatmap({ onOpenStock }: { onOpenStock: (s: string) => void }) {
   const tiles = useMemo(() => {
-    return STOCK_UNIVERSE.slice(0, 200).map((s) => {
-      const q = getLiveQuote(s.symbol);
-      if (!q) return null;
-      return { meta: s, changePct: q.changePct, price: q.price, marketCap: q.marketCap };
-    }).filter(Boolean) as { meta: typeof STOCK_UNIVERSE[0]; changePct: number; price: number; marketCap: number }[];
+    const top = REAL_STOCKS.slice(0, 200);
+    return top.map((meta) => {
+      const q: Quote = getQuote(meta.symbol);
+      return { meta, q };
+    });
   }, []);
 
-  const getColor = (pct: number) => {
-    if (pct > 3) return 'bg-bull/80 hover:bg-bull';
-    if (pct > 1) return 'bg-bull/60 hover:bg-bull/80';
-    if (pct > 0.2) return 'bg-bull/30 hover:bg-bull/50';
-    if (pct > -0.2) return 'bg-ink-700/60 hover:bg-ink-600';
-    if (pct > -1) return 'bg-bear/30 hover:bg-bear/50';
-    if (pct > -3) return 'bg-bear/60 hover:bg-bear/80';
-    return 'bg-bear/80 hover:bg-bear';
-  };
+  function tileColor(changePct: number): string {
+    const abs = Math.min(Math.abs(changePct), 5) / 5;
+    if (changePct >= 0) {
+      const alpha = 0.15 + abs * 0.7;
+      return `rgba(16, 185, 129, ${alpha.toFixed(2)})`;
+    }
+    const alpha = 0.15 + abs * 0.7;
+    return `rgba(239, 68, 68, ${alpha.toFixed(2)})`;
+  }
+
+  function textColor(changePct: number): string {
+    const abs = Math.min(Math.abs(changePct), 5) / 5;
+    return abs > 0.5 ? "#ffffff" : "#e2e8f0";
+  }
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-ink-50 flex items-center gap-2"><Grid3x3 size={20} className="text-brand-400" /> Market Heat Map</h1>
-        <p className="text-ink-400 text-sm">Top 200 stocks by market cap, sized by performance. Green = gainers, red = losers.</p>
+    <div className="flex flex-col gap-6 w-full">
+      <div className="flex items-center gap-2">
+        <Grid3x3 className="w-6 h-6 text-brand-400" />
+        <h1 className="text-2xl font-bold gradient-text">Market Heatmap</h1>
+        <span className="chip bg-brand-500/15 text-brand-300 text-base ml-2">Top 200</span>
       </div>
-      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-1.5">
-        {tiles.map((t) => (
-          <button
-            key={t.meta.symbol}
-            onClick={() => onOpenStock(t.meta.symbol)}
-            className={`${getColor(t.changePct)} rounded-lg p-2 text-center transition group relative overflow-hidden`}
-          >
-            <div className="text-[10px] sm:text-xs font-bold text-ink-950 truncate">{t.meta.symbol}</div>
-            <div className={`text-[10px] sm:text-xs font-mono ${t.changePct >= 0 ? 'text-ink-950' : 'text-ink-50'}`}>
-              {t.changePct >= 0 ? '+' : ''}{fmtPctRaw(t.changePct)}
-            </div>
-          </button>
-        ))}
+
+      <div className="flex items-center gap-4 text-sm text-ink-500">
+        <div className="flex items-center gap-2">
+          <span className="w-4 h-4 rounded" style={{ background: "rgba(239, 68, 68, 0.7)" }} />
+          <span className="text-base">Losers</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-4 h-4 rounded" style={{ background: "rgba(16, 185, 129, 0.7)" }} />
+          <span className="text-base">Gainers</span>
+        </div>
+        <span className="text-base text-ink-500 ml-auto">Tile size reflects market cap. Color intensity reflects change %.</span>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-1.5">
+        {tiles.map(({ meta, q }) => {
+          const up = q.changePct >= 0;
+          const bg = tileColor(q.changePct);
+          const fg = textColor(q.changePct);
+          const pctStr = (up ? "+" : "") + q.changePct.toFixed(2) + "%";
+          return (
+            <button
+              key={meta.symbol}
+              onClick={() => onOpenStock(meta.symbol)}
+              className="card card-hover p-2 flex flex-col items-center justify-center text-center transition animate-slide-up"
+              style={{ background: bg, minHeight: "72px" }}
+              title={meta.name + " - " + pctStr}
+            >
+              <span className="text-base font-bold leading-tight" style={{ color: fg }}>
+                {meta.symbol}
+              </span>
+              <span className="text-sm font-medium leading-tight" style={{ color: fg }}>
+                {pctStr}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

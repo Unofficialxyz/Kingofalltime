@@ -1,82 +1,68 @@
-import { useEffect, useState, useCallback } from 'react';
-import { supabase, hasSupabase } from './supabase';
+import { useState, useEffect, useCallback } from "react";
+import { getLiveQuote, startLiveUpdates } from "./dataService";
+import type { Quote } from "./types";
 
-export interface WatchItem { id: string; symbol: string; added_at: string; }
+export function useLiveQuote(symbol: string | null) {
+  const [quote, setQuote] = useState<Quote | null>(null);
+  useEffect(() => {
+    if (!symbol) { setQuote(null); return; }
+    startLiveUpdates();
+    const update = () => setQuote({ ...getLiveQuote(symbol) });
+    update();
+    const interval = setInterval(update, 2000);
+    return () => clearInterval(interval);
+  }, [symbol]);
+  return quote;
+}
+
+export function useLiveQuotes(symbols: string[] = []) {
+  const [quotes, setQuotes] = useState<Map<string, Quote>>(new Map());
+  const key = symbols.join(",");
+  useEffect(() => {
+    startLiveUpdates();
+    if (symbols.length === 0) return;
+    const update = () => {
+      const m = new Map<string, Quote>();
+      for (const s of symbols) m.set(s, { ...getLiveQuote(s) });
+      setQuotes(m);
+    };
+    update();
+    const interval = setInterval(update, 2000);
+    return () => clearInterval(interval);
+  }, [key]);
+  return { quotes, live: true };
+}
+
+const WATCH_KEY = "gsa_watchlist";
+const PORTFOLIO_KEY = "gsa_portfolio";
 
 export function useWatchlist() {
-  const [items, setItems] = useState<WatchItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    if (!hasSupabase) { setLoading(false); return; }
-    const { data, error } = await supabase
-      .from('watchlists')
-      .select('id, symbol, added_at')
-      .order('added_at', { ascending: false });
-    if (!error && data) setItems(data as WatchItem[]);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const add = useCallback(async (symbol: string) => {
-    if (!hasSupabase) return;
-    const { data } = await supabase.from('watchlists').insert({ symbol }).select('id, symbol, added_at').maybeSingle();
-    if (data) setItems((prev) => [data as WatchItem, ...prev.filter((i) => i.symbol !== symbol)]);
-  }, []);
-
-  const remove = useCallback(async (symbol: string) => {
-    if (!hasSupabase) return;
-    await supabase.from('watchlists').delete().eq('symbol', symbol);
-    setItems((prev) => prev.filter((i) => i.symbol !== symbol));
-  }, []);
-
-  const has = useCallback((symbol: string) => items.some((i) => i.symbol === symbol), [items]);
-
-  return { items, loading, add, remove, has };
+  const [items, setItems] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(WATCH_KEY) || "[]"); } catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem(WATCH_KEY, JSON.stringify(items)); }, [items]);
+  const add = useCallback((s: string) => setItems((p) => p.includes(s) ? p : [...p, s]), []);
+  const remove = useCallback((s: string) => setItems((p) => p.filter((x) => x !== s)), []);
+  const has = useCallback((s: string) => items.includes(s), [items]);
+  return { items, add, remove, has, loading: false };
 }
 
-export interface Holding {
-  id: string; symbol: string; quantity: number; avg_price: number;
-  bought_at: string | null; notes: string | null; created_at: string;
-}
+export interface Holding { symbol: string; qty: number; avgPrice: number }
 
 export function usePortfolio() {
-  const [items, setItems] = useState<Holding[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    if (!hasSupabase) { setLoading(false); return; }
-    const { data, error } = await supabase
-      .from('portfolio')
-      .select('id, symbol, quantity, avg_price, bought_at, notes, created_at')
-      .order('created_at', { ascending: false });
-    if (!error && data) setItems(data as Holding[]);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const add = useCallback(async (h: Omit<Holding, 'id' | 'created_at'>) => {
-    if (!hasSupabase) return;
-    const { data } = await supabase.from('portfolio')
-      .insert({ symbol: h.symbol, quantity: h.quantity, avg_price: h.avg_price, bought_at: h.bought_at, notes: h.notes })
-      .select('id, symbol, quantity, avg_price, bought_at, notes, created_at').maybeSingle();
-    if (data) setItems((prev) => [data as Holding, ...prev]);
-  }, []);
-
-  const update = useCallback(async (id: string, patch: Partial<Holding>) => {
-    if (!hasSupabase) return;
-    const { data } = await supabase.from('portfolio').update(patch).eq('id', id)
-      .select('id, symbol, quantity, avg_price, bought_at, notes, created_at').maybeSingle();
-    if (data) setItems((prev) => prev.map((i) => (i.id === id ? (data as Holding) : i)));
-  }, []);
-
-  const remove = useCallback(async (id: string) => {
-    if (!hasSupabase) return;
-    await supabase.from('portfolio').delete().eq('id', id);
-    setItems((prev) => prev.filter((i) => i.id !== id));
-  }, []);
-
-  return { items, loading, add, update, remove };
+  const [items, setItems] = useState<Holding[]>(() => {
+    try { return JSON.parse(localStorage.getItem(PORTFOLIO_KEY) || "[]"); } catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(items)); }, [items]);
+  const add = useCallback((h: Holding) => setItems((p) => {
+    const existing = p.find((x) => x.symbol === h.symbol);
+    if (existing) {
+      const totalQty = existing.qty + h.qty;
+      const totalCost = existing.qty * existing.avgPrice + h.qty * h.avgPrice;
+      return p.map((x) => x.symbol === h.symbol ? { ...x, qty: totalQty, avgPrice: totalCost / totalQty } : x);
+    }
+    return [...p, h];
+  }), []);
+  const remove = useCallback((s: string) => setItems((p) => p.filter((x) => x.symbol !== s)), []);
+  return { items, add, remove, loading: false };
 }

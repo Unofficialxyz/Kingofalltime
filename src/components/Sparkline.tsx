@@ -1,32 +1,34 @@
-interface Props {
-  points: number[];
+import { useMemo } from "react";
+
+interface SparklineProps {
+  data: number[];
   width?: number;
   height?: number;
-  positive?: boolean;
+  color?: string;
+  fillOpacity?: number;
 }
 
-export function Sparkline({ points, width = 120, height = 36, positive }: Props) {
-  if (!points.length) return null;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-  const x = (i: number) => (i / (points.length - 1 || 1)) * width;
-  const y = (p: number) => height - ((p - min) / range) * height;
-  const d = points.map((p, i) => `${x(i)},${y(p)}`).join(' ');
-  const up = positive ?? points[points.length - 1] >= points[0];
-  const color = up ? '#16c784' : '#ea3943';
-  const areaD = `M0,${height} L${d.replace(/ /g, ' L')} L${width},${height} Z`;
-  const gradId = `spark-${up ? 'g' : 'r'}-${Math.random().toString(36).slice(2, 7)}`;
+export function Sparkline({ data, width = 80, height = 28, color = "#10b981", fillOpacity = 0.15 }: SparklineProps) {
+  const path = useMemo(() => {
+    if (data.length < 2) return { line: "", area: "" };
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+    const step = width / (data.length - 1);
+    const points = data.map((d, i) => {
+      const x = i * step;
+      const y = height - ((d - min) / range) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    const line = `M${points.join(" L")}`;
+    const area = `${line} L${width},${height} L0,${height} Z`;
+    return { line, area };
+  }, [data, width, height]);
+
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" preserveAspectRatio="none">
-      <defs>
-        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={areaD} fill={`url(#${gradId})`} />
-      <polyline points={d} fill="none" stroke={color} strokeWidth="1.5" />
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+      <path d={path.area} fill={color} fillOpacity={fillOpacity} />
+      <path d={path.line} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
 }

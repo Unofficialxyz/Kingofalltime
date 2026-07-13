@@ -1,96 +1,90 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode, useCallback } from "react";
 
-export type CurrencyCode = 'INR' | 'USD' | 'EUR' | 'GBP' | 'JPY' | 'CNY' | 'HKD' | 'KRW' | 'AUD' | 'CAD' | 'CHF' | 'SEK' | 'BRL' | 'SAR' | 'AED' | 'TRY' | 'ZAR' | 'NGN' | 'PLN' | 'DKK' | 'TWD' | 'SGD';
-
-export interface CurrencyInfo { code: CurrencyCode; symbol: string; name: string; flag: string; }
+export interface CurrencyInfo { code: string; symbol: string; name: string; flag: string }
 
 export const CURRENCIES: CurrencyInfo[] = [
-  { code: 'INR', symbol: '₹', name: 'Indian Rupee', flag: '🇮🇳' },
-  { code: 'USD', symbol: '$', name: 'US Dollar', flag: '🇺🇸' },
-  { code: 'EUR', symbol: '€', name: 'Euro', flag: '🇪🇺' },
-  { code: 'GBP', symbol: '£', name: 'British Pound', flag: '🇬🇧' },
-  { code: 'JPY', symbol: '¥', name: 'Japanese Yen', flag: '🇯🇵' },
-  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan', flag: '🇨🇳' },
-  { code: 'HKD', symbol: 'HK$', name: 'HK Dollar', flag: '🇭🇰' },
-  { code: 'KRW', symbol: '₩', name: 'Korean Won', flag: '🇰🇷' },
-  { code: 'AUD', symbol: 'A$', name: 'AU Dollar', flag: '🇦🇺' },
-  { code: 'CAD', symbol: 'C$', name: 'CA Dollar', flag: '🇨🇦' },
-  { code: 'CHF', symbol: 'Fr', name: 'Swiss Franc', flag: '🇨🇭' },
-  { code: 'SEK', symbol: 'kr', name: 'Swedish Krona', flag: '🇸🇪' },
-  { code: 'BRL', symbol: 'R$', name: 'Brazilian Real', flag: '🇧🇷' },
-  { code: 'SAR', symbol: '﷼', name: 'Saudi Riyal', flag: '🇸🇦' },
-  { code: 'AED', symbol: 'د.إ', name: 'UAE Dirham', flag: '🇦🇪' },
-  { code: 'TRY', symbol: '₺', name: 'Turkish Lira', flag: '🇹🇷' },
-  { code: 'ZAR', symbol: 'R', name: 'SA Rand', flag: '🇿🇦' },
-  { code: 'NGN', symbol: '₦', name: 'Nigerian Naira', flag: '🇳🇬' },
-  { code: 'PLN', symbol: 'zł', name: 'Polish Zloty', flag: '🇵🇱' },
-  { code: 'DKK', symbol: 'kr', name: 'Danish Krone', flag: '🇩🇰' },
-  { code: 'TWD', symbol: 'NT$', name: 'Taiwan Dollar', flag: '🇹🇼' },
-  { code: 'SGD', symbol: 'S$', name: 'Singapore Dollar', flag: '🇸🇬' },
+  { code: "INR", symbol: "₹", name: "Indian Rupee", flag: "🇮🇳" },
+  { code: "USD", symbol: "$", name: "US Dollar", flag: "🇺🇸" },
+  { code: "EUR", symbol: "€", name: "Euro", flag: "🇪🇺" },
+  { code: "GBP", symbol: "£", name: "British Pound", flag: "🇬🇧" },
+  { code: "JPY", symbol: "¥", name: "Japanese Yen", flag: "🇯🇵" },
+  { code: "CNY", symbol: "¥", name: "Chinese Yuan", flag: "🇨🇳" },
+  { code: "AUD", symbol: "A$", name: "Australian Dollar", flag: "🇦🇺" },
+  { code: "CAD", symbol: "C$", name: "Canadian Dollar", flag: "🇨🇦" },
+  { code: "KRW", symbol: "₩", name: "Korean Won", flag: "🇰🇷" },
+  { code: "SGD", symbol: "S$", name: "Singapore Dollar", flag: "🇸🇬" },
+  { code: "HKD", symbol: "HK$", name: "Hong Kong Dollar", flag: "🇭🇰" },
+  { code: "BRL", symbol: "R$", name: "Brazilian Real", flag: "🇧🇷" },
+  { code: "MXN", symbol: "Mex$", name: "Mexican Peso", flag: "🇲🇽" },
+  { code: "ZAR", symbol: "R", name: "South African Rand", flag: "🇿🇦" },
+  { code: "SAR", symbol: "﷼", name: "Saudi Riyal", flag: "🇸🇦" },
+  { code: "AED", symbol: "د.إ", name: "UAE Dirham", flag: "🇦🇪" },
+  { code: "TRY", symbol: "₺", name: "Turkish Lira", flag: "🇹🇷" },
+  { code: "IDR", symbol: "Rp", name: "Indonesian Rupiah", flag: "🇮🇩" },
+  { code: "THB", symbol: "฿", name: "Thai Baht", flag: "🇹🇭" },
+  { code: "MYR", symbol: "RM", name: "Malaysian Ringgit", flag: "🇲🇾" },
+  { code: "PHP", symbol: "₱", name: "Philippine Peso", flag: "🇵🇭" },
+  { code: "VND", symbol: "₫", name: "Vietnamese Dong", flag: "🇻🇳" },
 ];
 
-const MAP = new Map(CURRENCIES.map((c) => [c.code, c]));
-export function getCurrencyInfo(code: string): CurrencyInfo { return MAP.get(code as CurrencyCode) ?? CURRENCIES[0]; }
-
-// Exchange rates: 1 unit of currency = X INR
-export const INR_RATES: Record<CurrencyCode, number> = {
-  INR: 1, USD: 83.5, EUR: 90.2, GBP: 105.8, JPY: 0.54, CNY: 11.5, HKD: 10.7,
-  KRW: 0.061, AUD: 55.2, CAD: 61.0, CHF: 93.5, SEK: 7.8, BRL: 16.5, SAR: 22.3,
-  AED: 22.7, TRY: 2.6, ZAR: 4.5, NGN: 0.055, PLN: 20.8, DKK: 12.1, TWD: 2.6, SGD: 62.0,
+const INR_RATES: Record<string, number> = {
+  INR: 1, USD: 0.012, EUR: 0.011, GBP: 0.0095, JPY: 1.75, CNY: 0.087,
+  AUD: 0.018, CAD: 0.016, KRW: 16.2, SGD: 0.016, HKD: 0.094, BRL: 0.061,
+  MXN: 0.21, ZAR: 0.22, SAR: 0.045, AED: 0.044, TRY: 0.39, IDR: 188,
+  THB: 0.43, MYR: 0.056, PHP: 0.70, VND: 305,
 };
 
 interface CurrencyCtx {
-  display: CurrencyCode;
-  setDisplay: (c: CurrencyCode) => void;
-  convert: (amount: number, from: string) => number;
-  formatPrice: (amount: number, from?: string) => string;
-  formatCompact: (amount: number, from?: string) => string;
+  display: string; setDisplay: (c: string) => void;
+  convert: (inr: number) => number;
+  formatPrice: (inr: number) => string;
+  formatCompact: (inr: number) => string;
   symbol: string;
 }
 
 const Ctx = createContext<CurrencyCtx | null>(null);
 
+function formatIndian(n: number): string {
+  if (n >= 10000000) return (n / 10000000).toFixed(2) + " Cr";
+  if (n >= 100000) return (n / 100000).toFixed(2) + " L";
+  if (n >= 1000) return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  return n.toFixed(2);
+}
+
+function formatCompactGeneric(n: number, sym: string): string {
+  if (Math.abs(n) >= 1e15) return sym + (n / 1e15).toFixed(2) + "Q";
+  if (Math.abs(n) >= 1e12) return sym + (n / 1e12).toFixed(2) + "T";
+  if (Math.abs(n) >= 1e9) return sym + (n / 1e9).toFixed(2) + "B";
+  if (Math.abs(n) >= 1e6) return sym + (n / 1e6).toFixed(2) + "M";
+  if (Math.abs(n) >= 1e3) return sym + (n / 1e3).toFixed(2) + "K";
+  return sym + n.toFixed(2);
+}
+
 export function CurrencyProvider({ children }: { children: ReactNode }) {
-  const [display, setDisplay] = useState<CurrencyCode>('INR');
-
-  const convert = useCallback((amount: number, from: string): number => {
-    const fromRate = INR_RATES[from as CurrencyCode] ?? 83.5;
-    const toRate = INR_RATES[display];
-    return amount * fromRate / toRate;
-  }, [display]);
-
-  const formatPrice = useCallback((amount: number, from = 'USD'): string => {
-    const converted = convert(amount, from);
-    const info = getCurrencyInfo(display);
-    const digits = display === 'JPY' || display === 'KRW' ? 0 : 2;
-    return info.symbol + converted.toLocaleString('en-IN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
-  }, [convert, display]);
-
-  const formatCompact = useCallback((amount: number, from = 'USD'): string => {
-    const converted = convert(amount, from);
-    const info = getCurrencyInfo(display);
-    const abs = Math.abs(converted);
-    let str: string;
-    if (abs >= 1e12) str = (converted / 1e12).toFixed(2) + 'T';
-    else if (abs >= 1e9) str = (converted / 1e9).toFixed(2) + 'B';
-    else if (abs >= 1e7) str = (converted / 1e7).toFixed(2) + 'Cr';
-    else if (abs >= 1e5) str = (converted / 1e5).toFixed(2) + 'L';
-    else if (abs >= 1e3) str = (converted / 1e3).toFixed(2) + 'K';
-    else str = converted.toFixed(0);
-    return info.symbol + str;
-  }, [convert, display]);
-
-  const info = getCurrencyInfo(display);
-
-  return (
-    <Ctx.Provider value={{ display, setDisplay, convert, formatPrice, formatCompact, symbol: info.symbol }}>
-      {children}
-    </Ctx.Provider>
-  );
+  const [display, setDisplay] = useState("INR");
+  const rate = INR_RATES[display] ?? 1;
+  const info = CURRENCIES.find((c) => c.code === display)!;
+  const convert = useCallback((inr: number) => inr * rate, [rate]);
+  const formatPrice = useCallback((inr: number) => {
+    const v = inr * rate;
+    if (display === "INR") return info.symbol + formatIndian(v);
+    if (["JPY", "KRW", "VND", "IDR"].includes(display)) return info.symbol + Math.round(v).toLocaleString();
+    return info.symbol + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }, [rate, display, info]);
+  const formatCompact = useCallback((inr: number) => {
+    const v = inr * rate;
+    if (display === "INR") {
+      if (Math.abs(v) >= 1e7) return info.symbol + (v / 1e7).toFixed(2) + "Cr";
+      if (Math.abs(v) >= 1e5) return info.symbol + (v / 1e5).toFixed(2) + "L";
+      return formatCompactGeneric(v, info.symbol);
+    }
+    return formatCompactGeneric(v, info.symbol);
+  }, [rate, display, info]);
+  return <Ctx.Provider value={{ display, setDisplay, convert, formatPrice, formatCompact, symbol: info.symbol }}>{children}</Ctx.Provider>;
 }
 
 export function useCurrency() {
   const ctx = useContext(Ctx);
-  if (!ctx) throw new Error('useCurrency must be used within CurrencyProvider');
+  if (!ctx) throw new Error("useCurrency must be inside CurrencyProvider");
   return ctx;
 }
