@@ -1,246 +1,152 @@
-import { useMemo, useState, useEffect } from "react";
-import { Wallet, X, Plus, TrendingUp, TrendingDown } from "lucide-react";
-import { getMeta } from "../lib/universe";
-import { getLiveQuote } from "../lib/dataService";
-import { useLiveQuotes } from "../lib/hooks";
-import { useCurrency } from "../lib/currency";
-import { fmtPctRaw, fmtNum } from "../lib/format";
-import type { Holding } from "../lib/hooks";
-import type { Quote } from "../lib/types";
+import { useMemo, useState } from 'react';
+import { Briefcase, Trash2 } from 'lucide-react';
+import { getLiveQuote, useLiveQuotes } from '../lib/liveFeed';
+import { STOCK_UNIVERSE } from '../lib/universe';
+import { fmtNum, fmtCompact, fmtPctRaw } from '../lib/format';
+import type { Holding } from '../lib/hooks';
 
-interface PortfolioProps {
+interface Props {
   items: Holding[];
-  onRemove: (s: string) => void;
-  onAdd: (h: Holding) => void;
+  onRemove: (id: string) => void;
+  onAdd: (h: Omit<Holding, 'id' | 'created_at'>) => void;
   loading: boolean;
   pendingSymbol: string | null;
   clearPending: () => void;
 }
 
-export function Portfolio({ items, onRemove, onAdd, loading, pendingSymbol, clearPending }: PortfolioProps) {
+export function Portfolio({ items, onRemove, onAdd, loading, pendingSymbol, clearPending }: Props) {
   useLiveQuotes();
-  const { formatPrice, formatCompact } = useCurrency();
+  const [symbol, setSymbol] = useState(pendingSymbol ?? '');
+  const [quantity, setQuantity] = useState('10');
+  const [avgPrice, setAvgPrice] = useState('');
+  const [notes, setNotes] = useState('');
 
-  const [formSymbol, setFormSymbol] = useState("");
-  const [formQty, setFormQty] = useState("");
-  const [formPrice, setFormPrice] = useState("");
-  const [error, setError] = useState("");
+  if (pendingSymbol && symbol !== pendingSymbol) {
+    setSymbol(pendingSymbol);
+    const q = getLiveQuote(pendingSymbol);
+    if (q) setAvgPrice(String(q.price));
+  }
 
-  // Prefill from pendingSymbol
-  useEffect(() => {
-    if (pendingSymbol) {
-      setFormSymbol(pendingSymbol);
-      const q = getLiveQuote(pendingSymbol);
-      if (q) setFormPrice(q.price.toFixed(2));
-      clearPending();
-    }
-  }, [pendingSymbol, clearPending]);
+  const rows = useMemo(() =>
+    items.map((h) => {
+      const meta = STOCK_UNIVERSE.find((s) => s.symbol === h.symbol);
+      const q = getLiveQuote(h.symbol);
+      const cost = h.quantity * h.avg_price;
+      const value = h.quantity * (q?.price ?? h.avg_price);
+      const pnl = value - cost;
+      const pnlPct = cost ? (pnl / cost) * 100 : 0;
+      return { h, meta, q, cost, value, pnl, pnlPct };
+    }).filter((r) => r.meta && r.q),
+  [items]);
 
-  // Compute live data per holding
-  const rows = useMemo(() => {
-    return items.map((h) => {
-      const meta = getMeta(h.symbol);
-      const quote = getLiveQuote(h.symbol);
-      const currentPrice = quote ? quote.price : 0;
-      const totalValue = currentPrice * h.qty;
-      const costBasis = h.avgPrice * h.qty;
-      const pnl = totalValue - costBasis;
-      const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
-      return { holding: h, meta, quote, currentPrice, totalValue, costBasis, pnl, pnlPct };
-    });
-  }, [items]);
-
-  // Totals
   const totals = useMemo(() => {
-    let totalValue = 0;
-    let totalCost = 0;
-    for (const r of rows) {
-      totalValue += r.totalValue;
-      totalCost += r.costBasis;
-    }
-    const totalPnl = totalValue - totalCost;
-    const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
-    return { totalValue, totalCost, totalPnl, totalPnlPct };
+    const cost = rows.reduce((a, r) => a + r.cost, 0);
+    const value = rows.reduce((a, r) => a + r.value, 0);
+    const pnl = value - cost;
+    return { cost, value, pnl, pnlPct: cost ? (pnl / cost) * 100 : 0 };
   }, [rows]);
 
-  function handleAdd(e: React.FormEvent) {
+  const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    const sym = formSymbol.trim().toUpperCase();
-    if (!sym) { setError("Enter a stock symbol."); return; }
-    if (!getMeta(sym)) { setError("Stock not found in universe."); return; }
-    const qty = parseFloat(formQty);
-    if (!qty || qty <= 0) { setError("Enter a valid quantity."); return; }
-    const price = parseFloat(formPrice);
-    if (!price || price <= 0) { setError("Enter a valid average price."); return; }
-    onAdd({ symbol: sym, qty, avgPrice: price });
-    setFormSymbol("");
-    setFormQty("");
-    setFormPrice("");
-  }
-
-  if (loading) {
-    return (
-      <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
-        <div className="flex items-center gap-2 mb-4">
-          <Wallet size={18} className="text-brand-400" />
-          <h2 className="text-lg font-semibold text-ink-100">Portfolio</h2>
-        </div>
-        <div className="card p-8 text-center text-ink-500">Loading portfolio...</div>
-      </div>
-    );
-  }
-
-  const totalPositive = totals.totalPnl >= 0;
+    if (!symbol || !quantity || !avgPrice) return;
+    onAdd({ symbol, quantity: +quantity, avg_price: +avgPrice, bought_at: null, notes: notes || null });
+    setSymbol(''); setQuantity('10'); setAvgPrice(''); setNotes('');
+    clearPending();
+  };
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-[1600px] mx-auto">
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <Wallet size={18} className="text-brand-400" />
-        <h2 className="text-lg font-semibold text-ink-100">Portfolio</h2>
-        {items.length > 0 ? <span className="chip bg-ink-800 text-ink-400">{items.length} holdings</span> : null}
+    <div className="space-y-4 animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold text-ink-50 flex items-center gap-2"><Briefcase size={20} className="text-brand-400" /> Portfolio</h1>
+        <p className="text-ink-400 text-sm">Track holdings, cost basis and P&L.</p>
       </div>
 
-      {/* Summary cards */}
-      {items.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="card p-4">
-            <div className="text-xs uppercase tracking-wider text-ink-500 mb-1">Total Value</div>
-            <div className="text-2xl font-mono font-bold text-ink-50">{formatCompact(totals.totalValue)}</div>
-          </div>
-          <div className="card p-4">
-            <div className="text-xs uppercase tracking-wider text-ink-500 mb-1">Total Cost Basis</div>
-            <div className="text-2xl font-mono font-bold text-ink-200">{formatCompact(totals.totalCost)}</div>
-          </div>
-          <div className="card p-4">
-            <div className="text-xs uppercase tracking-wider text-ink-500 mb-1">Total P&amp;L</div>
-            <div className={`text-2xl font-mono font-bold ${totalPositive ? "text-bull" : "text-bear"}`}>
-              {totalPositive ? "+" : ""}{formatCompact(totals.totalPnl)}
-            </div>
-            <div className={`text-sm font-mono ${totalPositive ? "text-bull" : "text-bear"}`}>
-              {totalPositive ? "+" : ""}{fmtPctRaw(totals.totalPnlPct)}%
-            </div>
+      {rows.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Stat label="Total value" value={`$${fmtCompact(totals.value)}`} />
+          <Stat label="Total cost" value={`$${fmtCompact(totals.cost)}`} />
+          <Stat label="Total P&L" value={`$${fmtCompact(totals.pnl)}`} tone={totals.pnl >= 0 ? 'bull' : 'bear'} />
+          <Stat label="Return" value={`${totals.pnlPct >= 0 ? '+' : ''}${fmtPctRaw(totals.pnlPct)}`} tone={totals.pnlPct >= 0 ? 'bull' : 'bear'} />
+        </div>
+      )}
+
+      <form onSubmit={submit} className="card p-4 grid grid-cols-1 sm:grid-cols-5 gap-3">
+        <div className="sm:col-span-1">
+          <label className="block text-xs text-ink-500 mb-1">Symbol</label>
+          <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} placeholder="AAPL" className="input" />
+        </div>
+        <div>
+          <label className="block text-xs text-ink-500 mb-1">Quantity</label>
+          <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="input" />
+        </div>
+        <div>
+          <label className="block text-xs text-ink-500 mb-1">Avg price</label>
+          <input type="number" value={avgPrice} onChange={(e) => setAvgPrice(e.target.value)} placeholder="0.00" className="input" />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs text-ink-500 mb-1">Notes (optional)</label>
+          <div className="flex gap-2">
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Long-term hold…" className="input" />
+            <button type="submit" className="btn-primary shrink-0">Add</button>
           </div>
         </div>
-      ) : null}
+      </form>
 
-      {/* Add form */}
-      <div className="card p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Plus size={16} className="text-brand-400" />
-          <h3 className="text-sm font-semibold text-ink-100">Add Holding</h3>
+      {loading && <div className="card p-8 text-center text-ink-500 text-sm">Loading…</div>}
+
+      {!loading && rows.length === 0 && (
+        <div className="card p-10 text-center">
+          <Briefcase size={28} className="mx-auto text-ink-600 mb-3" />
+          <p className="text-ink-300">No holdings yet.</p>
+          <p className="text-ink-500 text-sm mt-1">Add a position using the form above.</p>
         </div>
-        <form onSubmit={handleAdd} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <input
-            type="text"
-            placeholder="Symbol (e.g. AAPL)"
-            value={formSymbol}
-            onChange={(e) => setFormSymbol(e.target.value)}
-            className="input"
-          />
-          <input
-            type="number"
-            placeholder="Quantity"
-            value={formQty}
-            onChange={(e) => setFormQty(e.target.value)}
-            className="input"
-            min="0"
-            step="any"
-          />
-          <input
-            type="number"
-            placeholder="Avg Price"
-            value={formPrice}
-            onChange={(e) => setFormPrice(e.target.value)}
-            className="input"
-            min="0"
-            step="any"
-          />
-          <button type="submit" className="btn-primary">
-            <Plus size={16} /> Add
-          </button>
-        </form>
-        {error ? <p className="text-sm text-bear mt-2">{error}</p> : null}
-      </div>
+      )}
 
-      {/* Holdings table */}
-      {items.length > 0 ? (
+      {rows.length > 0 && (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/5 bg-ink-900/50">
-                  <th className="text-left py-3 px-4 font-medium text-ink-400">Symbol</th>
-                  <th className="text-right py-3 px-4 font-medium text-ink-400">Qty</th>
-                  <th className="text-right py-3 px-4 font-medium text-ink-400">Avg Price</th>
-                  <th className="text-right py-3 px-4 font-medium text-ink-400">Current</th>
-                  <th className="text-right py-3 px-4 font-medium text-ink-400">Total Value</th>
-                  <th className="text-right py-3 px-4 font-medium text-ink-400">P&amp;L</th>
-                  <th className="text-right py-3 px-4 font-medium text-ink-400">P&amp;L %</th>
-                  <th className="text-right py-3 px-4 font-medium text-ink-400 w-12"></th>
+                <tr className="text-ink-500 text-xs">
+                  <th className="text-left px-4 py-2 font-medium">Symbol</th>
+                  <th className="text-right px-4 py-2 font-medium">Qty</th>
+                  <th className="text-right px-4 py-2 font-medium hidden sm:table-cell">Avg cost</th>
+                  <th className="text-right px-4 py-2 font-medium">Price</th>
+                  <th className="text-right px-4 py-2 font-medium">Value</th>
+                  <th className="text-right px-4 py-2 font-medium">P&L</th>
+                  <th className="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
-                  const positive = r.pnl >= 0;
-                  return (
-                    <tr
-                      key={r.holding.symbol}
-                      className="border-b border-white/5 last:border-0 hover:bg-white/5 transition"
-                    >
-                      <td className="py-3 px-4 font-semibold text-ink-100">{r.holding.symbol}</td>
-                      <td className="py-3 px-4 text-right font-mono text-ink-300">{fmtNum(r.holding.qty, 0)}</td>
-                      <td className="py-3 px-4 text-right font-mono text-ink-300">
-                        {formatPrice(r.holding.avgPrice, r.meta?.currency)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-ink-200">
-                        {r.quote ? formatPrice(r.currentPrice, r.meta?.currency) : "—"}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-ink-100">
-                        {r.quote ? formatCompact(r.totalValue) : "—"}
-                      </td>
-                      <td className={`py-3 px-4 text-right font-mono ${positive ? "text-bull" : "text-bear"}`}>
-                        {positive ? "+" : ""}{formatCompact(r.pnl)}
-                      </td>
-                      <td className={`py-3 px-4 text-right font-mono ${positive ? "text-bull" : "text-bear"}`}>
-                        {positive ? "+" : ""}{fmtPctRaw(r.pnlPct)}%
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => onRemove(r.holding.symbol)}
-                          className="text-ink-500 hover:text-bear transition p-1"
-                          aria-label={"Remove " + r.holding.symbol}
-                        >
-                          <X size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {rows.map((r) => (
+                  <tr key={r.h.id} className="border-t border-white/[0.03] hover:bg-white/[0.03] transition">
+                    <td className="px-4 py-2.5 font-semibold text-ink-100">{r.h.symbol}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-ink-300">{r.h.quantity}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-ink-300 hidden sm:table-cell">{fmtNum(r.h.avg_price)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-ink-100">{fmtNum(r.q!.price)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-ink-100">${fmtCompact(r.value)}</td>
+                    <td className={`px-4 py-2.5 text-right font-mono ${r.pnl >= 0 ? 'text-bull' : 'text-bear'}`}>
+                      {r.pnl >= 0 ? '+' : ''}${fmtCompact(r.pnl)} ({r.pnlPct >= 0 ? '+' : ''}{fmtPctRaw(r.pnlPct)})
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button onClick={() => onRemove(r.h.id)} className="text-ink-500 hover:text-bear transition"><Trash2 size={15} /></button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
-      ) : (
-        <div className="card p-12 text-center">
-          <Wallet size={40} className="mx-auto text-ink-600 mb-3" />
-          <p className="text-ink-400 mb-1">Your portfolio is empty.</p>
-          <p className="text-sm text-ink-500">
-            Add a holding above, or click the Portfolio button on any stock detail page.
-          </p>
-        </div>
       )}
-
-      {/* Footer hint */}
-      {items.length > 0 ? (
-        <div className="flex items-center gap-2 text-xs text-ink-500">
-          {totalPositive ? <TrendingUp size={14} className="text-bull" /> : <TrendingDown size={14} className="text-bear" />}
-          <span>Live prices update every 5 seconds. P&amp;L is calculated against your average cost basis.</span>
-        </div>
-      ) : null}
     </div>
   );
 }
 
-export default Portfolio;
+function Stat({ label, value, tone }: { label: string; value: string; tone?: 'bull' | 'bear' }) {
+  return (
+    <div className="card p-4">
+      <div className="text-xs text-ink-500">{label}</div>
+      <div className={`text-lg font-semibold font-mono mt-1 ${tone === 'bull' ? 'text-bull' : tone === 'bear' ? 'text-bear' : 'text-ink-100'}`}>{value}</div>
+    </div>
+  );
+}

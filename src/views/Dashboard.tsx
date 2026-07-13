@@ -1,443 +1,202 @@
-import { useMemo } from "react";
-import {
-  Star,
-  Target,
-  Globe2,
-  Gauge,
-  PieChart,
-  TrendingUp,
-  TrendingDown,
-  Activity,
-} from "lucide-react";
-import {
-  STOCK_UNIVERSE,
-  REGIONS,
-  SECTORS,
-  TOTAL_STOCKS,
-  getMetaByIndex,
-} from "../lib/universe";
-import { getLiveQuote, getCandles } from "../lib/dataService";
-import { useLiveQuotes } from "../lib/hooks";
-import { useCurrency } from "../lib/currency";
-import { fmtPctRaw } from "../lib/format";
-import { Sparkline } from "../components/Sparkline";
-import type { Quote, Region } from "../lib/types";
+import { useMemo } from 'react';
+import { TrendingUp, TrendingDown, Activity, Globe2, Gauge, PieChart } from 'lucide-react';
+import { getCandles } from '../lib/dataService';
+import { getLiveQuote, useLiveQuotes } from '../lib/liveFeed';
+import { STOCK_UNIVERSE, SECTORS } from '../lib/universe';
+import { fmtPctRaw } from '../lib/format';
+import { useCurrency } from '../lib/currency';
+import { Sparkline } from '../components/Sparkline';
+import type { Quote } from '../lib/types';
 
-interface DashboardProps {
-  onOpenStock: (symbol: string) => void;
-}
+interface Props { onOpenStock: (symbol: string) => void; }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const REGION_SAMPLE_SIZE = 200;
-const MOVERS_SAMPLE_SIZE = 500;
-const SECTOR_SAMPLE_SIZE = 60;
-
-function sampleStocksByRegion(region: Region, limit: number) {
-  const out: typeof STOCK_UNIVERSE = [];
-  for (let i = 0; i < STOCK_UNIVERSE.length && out.length < limit; i++) {
-    const s = STOCK_UNIVERSE[i];
-    if (s.region === region) out.push(s);
-  }
-  return out;
-}
-
-function sampleStocksBySector(sector: string, limit: number) {
-  const out: typeof STOCK_UNIVERSE = [];
-  for (let i = 0; i < STOCK_UNIVERSE.length && out.length < limit; i++) {
-    const s = STOCK_UNIVERSE[i];
-    if (s.sector === sector) out.push(s);
-  }
-  return out;
-}
-
-function sparkPointsFor(symbol: string): number[] {
-  const candles = getCandles(symbol, "1W");
-  if (!candles.length) return [];
-  return candles.map((c) => c.c);
-}
-
-// ─── Dashboard ─────────────────────────────────────────────────────────────────
-
-export function Dashboard({ onOpenStock }: DashboardProps) {
+export function Dashboard({ onOpenStock }: Props) {
   useLiveQuotes();
-  const { formatCompact, formatPrice } = useCurrency();
+  const { formatCompact } = useCurrency();
 
-  // ── Best stock per region (highest % gain) ──
-  const bestPerRegion = useMemo(() => {
-    return REGIONS.map((region) => {
-      const sample = sampleStocksByRegion(region, REGION_SAMPLE_SIZE);
-      let best: { symbol: string; name: string; quote: Quote } | null = null;
-      for (const s of sample) {
-        const q = getLiveQuote(s.symbol);
-        if (!q) continue;
-        if (!best || q.changePct > best.quote.changePct) {
-          best = { symbol: s.symbol, name: s.name, quote: q };
-        }
-      }
-      return { region, best };
-    }).filter((r) => r.best);
+  const { gainers, losers, active } = useMemo(() => {
+    const quotes = STOCK_UNIVERSE.slice(0, 500).map((s) => getLiveQuote(s.symbol)!).filter(Boolean);
+    return {
+      gainers: [...quotes].sort((a, b) => b.changePct - a.changePct).slice(0, 8),
+      losers: [...quotes].sort((a, b) => a.changePct - b.changePct).slice(0, 8),
+      active: [...quotes].sort((a, b) => b.volume - a.volume).slice(0, 8),
+    };
   }, []);
 
-  // ── Cheapest stock per region (lowest positive P/E) ──
-  const cheapestPerRegion = useMemo(() => {
-    return REGIONS.map((region) => {
-      const sample = sampleStocksByRegion(region, REGION_SAMPLE_SIZE);
-      let cheapest: { symbol: string; name: string; quote: Quote } | null = null;
-      for (const s of sample) {
-        const q = getLiveQuote(s.symbol);
-        if (!q) continue;
-        if (q.pe > 0 && (!cheapest || q.pe < cheapest.quote.pe)) {
-          cheapest = { symbol: s.symbol, name: s.name, quote: q };
-        }
-      }
-      return { region, cheapest };
-    }).filter((r) => r.cheapest);
-  }, []);
-
-  // ── Movers (first 500 stocks) ──
-  const { topGainers, topLosers, mostActive } = useMemo(() => {
-    const quotes: { symbol: string; name: string; quote: Quote }[] = [];
-    for (let i = 0; i < MOVERS_SAMPLE_SIZE; i++) {
-      const meta = STOCK_UNIVERSE[i];
-      if (!meta) break;
-      const q = getLiveQuote(meta.symbol);
-      if (q) quotes.push({ symbol: meta.symbol, name: meta.name, quote: q });
+  const indices = useMemo(() => {
+    const byRegion: Record<string, typeof STOCK_UNIVERSE> = {};
+    for (const s of STOCK_UNIVERSE.slice(0, 500)) {
+      (byRegion[s.region] ??= []).push(s);
     }
-    const sorted = [...quotes].sort((a, b) => b.quote.changePct - a.quote.changePct);
-    const gainers = sorted.slice(0, 5);
-    const losers = [...sorted].reverse().slice(0, 5);
-    const active = [...quotes].sort((a, b) => b.quote.volume - a.quote.volume).slice(0, 5);
-    return { topGainers: gainers, topLosers: losers, mostActive: active };
+    return Object.entries(byRegion).map(([region, stocks]) => {
+      const quotes = stocks.map((s) => getLiveQuote(s.symbol)!).filter(Boolean);
+      const avg = quotes.reduce((a, q) => a + q.changePct, 0) / quotes.length;
+      const level = 1000 + (region.charCodeAt(0) * 100 + region.length * 50) % 9000;
+      return { name: region, level, changePct: +avg.toFixed(2), change: +(level * (avg / 100)).toFixed(2) };
+    });
   }, []);
 
-  // ── Sector performance ──
+  const stats = useMemo(() => {
+    const quotes = STOCK_UNIVERSE.slice(0, 500).map((s) => getLiveQuote(s.symbol)!).filter(Boolean);
+    const advancers = quotes.filter((q) => q.changePct > 0).length;
+    const totalCap = quotes.reduce((a, q) => a + q.marketCap, 0);
+    return { count: STOCK_UNIVERSE.length, advancers, decliners: quotes.length - advancers, totalCap };
+  }, []);
+
+  const fearGreed = useMemo(() => {
+    const quotes = STOCK_UNIVERSE.slice(0, 500).map((s) => getLiveQuote(s.symbol)!).filter(Boolean);
+    const advancers = quotes.filter((q) => q.changePct > 0).length;
+    const advRatio = advancers / quotes.length;
+    const avgRsi = 50 + (advRatio - 0.5) * 40;
+    const score = Math.max(0, Math.min(100, Math.round(advRatio * 60 + avgRsi * 0.4)));
+    return { score, label: score >= 75 ? 'Extreme Greed' : score >= 55 ? 'Greed' : score >= 45 ? 'Neutral' : score >= 25 ? 'Fear' : 'Extreme Fear' };
+  }, []);
+
   const sectorPerf = useMemo(() => {
     return SECTORS.map((sector) => {
-      const sample = sampleStocksBySector(sector, SECTOR_SAMPLE_SIZE);
-      let sum = 0;
-      let count = 0;
-      for (const s of sample) {
-        const q = getLiveQuote(s.symbol);
-        if (q) {
-          sum += q.changePct;
-          count++;
-        }
-      }
-      const avg = count > 0 ? sum / count : 0;
-      return { sector, avg, count };
-    }).sort((a, b) => b.avg - a.avg);
+      const stocks = STOCK_UNIVERSE.filter((s) => s.sector === sector).slice(0, 50);
+      const quotes = stocks.map((s) => getLiveQuote(s.symbol)!).filter(Boolean);
+      const avg = quotes.length ? quotes.reduce((a, q) => a + q.changePct, 0) / quotes.length : 0;
+      return { sector, avgChange: +avg.toFixed(2) };
+    }).sort((a, b) => b.avgChange - a.avgChange);
   }, []);
-
-  // ── Market stats ──
-  const stats = useMemo(() => {
-    let advancers = 0;
-    let decliners = 0;
-    let totalMcap = 0;
-    for (let i = 0; i < MOVERS_SAMPLE_SIZE; i++) {
-      const meta = STOCK_UNIVERSE[i];
-      if (!meta) break;
-      const q = getLiveQuote(meta.symbol);
-      if (!q) continue;
-      if (q.changePct > 0) advancers++;
-      else if (q.changePct < 0) decliners++;
-      totalMcap += q.marketCap;
-    }
-    return { advancers, decliners, totalMcap };
-  }, []);
-
-  // ── Fear & Greed Index (0-100 from advancer ratio) ──
-  const fearGreed = useMemo(() => {
-    const total = stats.advancers + stats.decliners;
-    if (total === 0) return 50;
-    const ratio = stats.advancers / total;
-    return Math.round(ratio * 100);
-  }, [stats]);
-
-  const fgLabel =
-    fearGreed >= 75 ? "Extreme Greed" :
-    fearGreed >= 55 ? "Greed" :
-    fearGreed >= 45 ? "Neutral" :
-    fearGreed >= 25 ? "Fear" :
-    "Extreme Fear";
-  const fgColor =
-    fearGreed >= 55 ? "text-bull" :
-    fearGreed >= 45 ? "text-accent-400" :
-    "text-bear";
-
-  // ── Region row ──
-  function RegionRow({
-    symbol,
-    name,
-    quote,
-    metric,
-  }: {
-    symbol: string;
-    name: string;
-    quote: Quote;
-    metric: string;
-  }) {
-    const positive = quote.changePct >= 0;
-    return (
-      <button
-        onClick={() => onOpenStock(symbol)}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition text-left group"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-ink-100 text-sm truncate">{symbol}</div>
-          <div className="text-xs text-ink-500 truncate">{name}</div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className="text-xs font-mono text-ink-300">{metric}</div>
-          <div className={`text-xs font-mono ${positive ? "text-bull" : "text-bear"}`}>
-            {positive ? "+" : ""}{fmtPctRaw(quote.changePct)}
-          </div>
-        </div>
-      </button>
-    );
-  }
-
-  // ── Mover row ──
-  function MoverRow({
-    symbol,
-    name,
-    quote,
-  }: {
-    symbol: string;
-    name: string;
-    quote: Quote;
-  }) {
-    const positive = quote.changePct >= 0;
-    const points = sparkPointsFor(symbol);
-    return (
-      <button
-        onClick={() => onOpenStock(symbol)}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition text-left"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-ink-100 text-sm truncate">{symbol}</div>
-          <div className="text-xs text-ink-500 truncate">{name}</div>
-        </div>
-        <Sparkline points={points} positive={positive} width={64} height={28} />
-        <div className="text-right shrink-0 w-20">
-          <div className="text-xs font-mono text-ink-300">{formatPrice(quote.price, getMetaByIndex(STOCK_UNIVERSE.findIndex((s) => s.symbol === symbol))?.currency)}</div>
-          <div className={`text-xs font-mono ${positive ? "text-bull" : "text-bear"}`}>
-            {positive ? "+" : ""}{fmtPctRaw(quote.changePct)}
-          </div>
-        </div>
-      </button>
-    );
-  }
-
-  // ── Most active row ──
-  function ActiveRow({
-    symbol,
-    name,
-    quote,
-  }: {
-    symbol: string;
-    name: string;
-    quote: Quote;
-  }) {
-    const positive = quote.changePct >= 0;
-    return (
-      <button
-        onClick={() => onOpenStock(symbol)}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition text-left"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-ink-100 text-sm truncate">{symbol}</div>
-          <div className="text-xs text-ink-500 truncate">{name}</div>
-        </div>
-        <div className="text-right shrink-0">
-          <div className="text-xs font-mono text-ink-400">{formatCompact(quote.volume)}</div>
-          <div className={`text-xs font-mono ${positive ? "text-bull" : "text-bear"}`}>
-            {positive ? "+" : ""}{fmtPctRaw(quote.changePct)}
-          </div>
-        </div>
-      </button>
-    );
-  }
 
   return (
-    <div className="flex gap-6 p-6 max-w-[1600px] mx-auto">
-      {/* ── LEFT SIDEBAR ── */}
-      <aside className="hidden lg:block w-72 shrink-0 space-y-4">
-        {/* Best Stock of the Day */}
-        <div className="card p-4">
+    <div className="space-y-6 animate-fade-in">
+      {/* Hero */}
+      <div className="card p-6 sm:p-8 relative overflow-hidden">
+        <div className="absolute -right-20 -top-20 w-72 h-72 rounded-full bg-brand-500/10 blur-3xl" />
+        <div className="relative">
+          <div className="flex items-center gap-2 text-brand-300 text-sm font-medium mb-2">
+            <Globe2 size={16} /> Global markets, one screen
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold text-balance text-ink-50">
+            Analyse <span className="text-brand-400">{stats.count.toLocaleString()}+ stocks</span>, anywhere in the world.
+          </h1>
+          <p className="mt-3 text-ink-400 max-w-2xl text-balance">
+            AI-powered technicals, fundamentals, screener, compare, watchlists and portfolio tracking —
+            across US, India, Europe, Asia and more. All prices in INR by default.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-6 text-sm">
+            <Stat label="Stocks tracked" value={stats.count.toLocaleString()} />
+            <Stat label="Advancing" value={stats.advancers.toString()} tone="bull" />
+            <Stat label="Declining" value={stats.decliners.toString()} tone="bear" />
+            <Stat label="Total mkt cap" value={formatCompact(stats.totalCap, 'USD')} />
+          </div>
+        </div>
+      </div>
+
+      {/* Fear & Greed + Sector performance */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="card p-5">
           <div className="flex items-center gap-2 mb-3">
-            <Star size={16} className="text-accent-400" />
-            <h3 className="text-sm font-semibold text-ink-100">Best Stock of the Day</h3>
+            <Gauge size={18} className="text-brand-400" />
+            <h3 className="font-semibold text-ink-100 text-sm">Fear & Greed Index</h3>
           </div>
-          <div className="space-y-0.5">
-            {bestPerRegion.slice(0, 12).map(({ region, best }) =>
-              best ? (
-                <div key={region}>
-                  <div className="px-3 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-ink-600">{region}</div>
-                  <RegionRow
-                    symbol={best.symbol}
-                    name={best.name}
-                    quote={best.quote}
-                    metric={formatPrice(best.quote.price, STOCK_UNIVERSE.find((s) => s.symbol === best.symbol)?.currency)}
-                  />
-                </div>
-              ) : null
-            )}
+          <div className="text-center py-4">
+            <div className={`text-5xl font-bold font-mono ${fearGreed.score >= 55 ? 'text-bull' : fearGreed.score >= 45 ? 'text-accent-400' : 'text-bear'}`}>
+              {fearGreed.score}
+            </div>
+            <div className="text-sm text-ink-400 mt-1">{fearGreed.label}</div>
+          </div>
+          <div className="h-2 rounded-full bg-gradient-to-r from-bear via-accent-400 to-bull overflow-hidden">
+            <div className="relative h-full" style={{ width: `${fearGreed.score}%` }}>
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-ink-950" />
+            </div>
+          </div>
+          <div className="flex justify-between text-[10px] text-ink-600 mt-1">
+            <span>Extreme Fear</span><span>Neutral</span><span>Extreme Greed</span>
           </div>
         </div>
 
-        {/* Cheapest Stock of the Day */}
-        <div className="card p-4">
+        <div className="card p-5 lg:col-span-2">
           <div className="flex items-center gap-2 mb-3">
-            <Target size={16} className="text-brand-400" />
-            <h3 className="text-sm font-semibold text-ink-100">Cheapest Stock of the Day</h3>
+            <PieChart size={18} className="text-brand-400" />
+            <h3 className="font-semibold text-ink-100 text-sm">Sector Performance</h3>
           </div>
-          <div className="space-y-0.5">
-            {cheapestPerRegion.slice(0, 12).map(({ region, cheapest }) =>
-              cheapest ? (
-                <div key={region}>
-                  <div className="px-3 pt-2 pb-0.5 text-[10px] uppercase tracking-wider text-ink-600">{region}</div>
-                  <RegionRow
-                    symbol={cheapest.symbol}
-                    name={cheapest.name}
-                    quote={cheapest.quote}
-                    metric={`P/E ${cheapest.quote.pe.toFixed(1)}`}
-                  />
-                </div>
-              ) : null
-            )}
-          </div>
-        </div>
-      </aside>
-
-      {/* ── MAIN CONTENT ── */}
-      <main className="flex-1 min-w-0 space-y-6">
-        {/* Hero stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Globe2 size={16} className="text-brand-400" />
-              <span className="text-xs uppercase tracking-wider text-ink-500">Total Stocks</span>
-            </div>
-            <div className="text-2xl font-bold text-ink-50 font-mono">{formatCompact(TOTAL_STOCKS)}</div>
-            <div className="text-xs text-ink-500 mt-1">Across {REGIONS.length} regions</div>
-          </div>
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp size={16} className="text-bull" />
-              <span className="text-xs uppercase tracking-wider text-ink-500">Advancers / Decliners</span>
-            </div>
-            <div className="text-2xl font-bold font-mono">
-              <span className="text-bull">{stats.advancers}</span>
-              <span className="text-ink-600 mx-1">/</span>
-              <span className="text-bear">{stats.decliners}</span>
-            </div>
-            <div className="text-xs text-ink-500 mt-1">Sampled from top {MOVERS_SAMPLE_SIZE}</div>
-          </div>
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Activity size={16} className="text-accent-400" />
-              <span className="text-xs uppercase tracking-wider text-ink-500">Total Market Cap</span>
-            </div>
-            <div className="text-2xl font-bold text-ink-50 font-mono">{formatCompact(stats.totalMcap, "USD")}</div>
-            <div className="text-xs text-ink-500 mt-1">Sampled aggregate</div>
-          </div>
-        </div>
-
-        {/* Fear & Greed + Sector Performance */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Fear & Greed */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Gauge size={16} className="text-accent-500" />
-              <h3 className="text-sm font-semibold text-ink-100">Fear &amp; Greed Index</h3>
-            </div>
-            <div className="flex flex-col items-center">
-              <div className="relative w-40 h-20 overflow-hidden">
-                <div className="absolute inset-0 rounded-t-full bg-gradient-to-r from-bear via-accent-400 to-bull opacity-80" />
-                <div
-                  className="absolute bottom-0 w-1 h-20 bg-ink-50 rounded-full"
-                  style={{ left: `calc(${fearGreed}% - 2px)` }}
-                />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {sectorPerf.map((s) => (
+              <div key={s.sector} className="flex items-center justify-between p-2 rounded-lg bg-white/[0.03]">
+                <span className="text-xs text-ink-300 truncate">{s.sector}</span>
+                <span className={`text-xs font-mono ${s.avgChange >= 0 ? 'text-bull' : 'text-bear'}`}>
+                  {s.avgChange >= 0 ? '+' : ''}{fmtPctRaw(s.avgChange)}
+                </span>
               </div>
-              <div className="text-3xl font-bold font-mono mt-2">{fearGreed}</div>
-              <div className={`text-sm font-semibold ${fgColor}`}>{fgLabel}</div>
-            </div>
-          </div>
-
-          {/* Sector Performance */}
-          <div className="card p-5 lg:col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <PieChart size={16} className="text-brand-400" />
-              <h3 className="text-sm font-semibold text-ink-100">Sector Performance</h3>
-            </div>
-            <div className="space-y-2">
-              {sectorPerf.map((s) => {
-                const positive = s.avg >= 0;
-                const width = Math.min(Math.abs(s.avg) * 25, 100);
-                return (
-                  <div key={s.sector} className="flex items-center gap-3">
-                    <div className="w-36 text-xs text-ink-400 truncate shrink-0">{s.sector}</div>
-                    <div className="flex-1 h-5 bg-white/5 rounded relative overflow-hidden">
-                      <div
-                        className={`absolute top-0 bottom-0 rounded ${positive ? "bg-bull/60" : "bg-bear/60"}`}
-                        style={{ width: `${width}%`, left: positive ? "50%" : `${50 - width}%` }}
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center text-[10px] text-ink-600 font-mono">
-                        {s.count}
-                      </div>
-                    </div>
-                    <div className={`w-16 text-right text-xs font-mono ${positive ? "text-bull" : "text-bear"}`}>
-                      {positive ? "+" : ""}{fmtPctRaw(s.avg)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            ))}
           </div>
         </div>
+      </div>
 
-        {/* Top Gainers / Losers / Most Active */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="card p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingUp size={16} className="text-bull" />
-              <h3 className="text-sm font-semibold text-ink-100">Top Gainers</h3>
+      {/* Regional indices */}
+      <div>
+        <h2 className="text-sm font-semibold text-ink-300 mb-3 px-1">Regional snapshot</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {indices.map((idx) => (
+            <div key={idx.name} className="card card-hover p-4">
+              <div className="text-xs text-ink-400 truncate">{idx.name}</div>
+              <div className="text-lg font-semibold text-ink-100 mt-1">{idx.level.toLocaleString()}</div>
+              <div className={`text-xs font-mono mt-1 flex items-center gap-1 ${idx.changePct >= 0 ? 'text-bull' : 'text-bear'}`}>
+                {idx.changePct >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                {idx.changePct >= 0 ? '+' : ''}{fmtPctRaw(idx.changePct)}
+              </div>
             </div>
-            <div className="space-y-0.5">
-              {topGainers.map((m) => (
-                <MoverRow key={m.symbol} symbol={m.symbol} name={m.name} quote={m.quote} />
-              ))}
-            </div>
-          </div>
-
-          <div className="card p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingDown size={16} className="text-bear" />
-              <h3 className="text-sm font-semibold text-ink-100">Top Losers</h3>
-            </div>
-            <div className="space-y-0.5">
-              {topLosers.map((m) => (
-                <MoverRow key={m.symbol} symbol={m.symbol} name={m.name} quote={m.quote} />
-              ))}
-            </div>
-          </div>
-
-          <div className="card p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Activity size={16} className="text-brand-300" />
-              <h3 className="text-sm font-semibold text-ink-100">Most Active</h3>
-            </div>
-            <div className="space-y-0.5">
-              {mostActive.map((m) => (
-                <ActiveRow key={m.symbol} symbol={m.symbol} name={m.name} quote={m.quote} />
-              ))}
-            </div>
-          </div>
+          ))}
         </div>
-      </main>
+      </div>
+
+      {/* Movers */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <MoverCard title="Top gainers" icon={<TrendingUp size={16} className="text-bull" />} quotes={gainers} onOpenStock={onOpenStock} />
+        <MoverCard title="Top losers" icon={<TrendingDown size={16} className="text-bear" />} quotes={losers} onOpenStock={onOpenStock} />
+        <MoverCard title="Most active" icon={<Activity size={16} className="text-accent-400" />} quotes={active} onOpenStock={onOpenStock} volume />
+      </div>
     </div>
   );
 }
 
-export default Dashboard;
+function Stat({ label, value, tone }: { label: string; value: string; tone?: 'bull' | 'bear' }) {
+  return (
+    <div>
+      <div className={`text-xl font-semibold ${tone === 'bull' ? 'text-bull' : tone === 'bear' ? 'text-bear' : 'text-ink-100'}`}>{value}</div>
+      <div className="text-xs text-ink-500">{label}</div>
+    </div>
+  );
+}
+
+function MoverCard({ title, icon, quotes, onOpenStock, volume }: {
+  title: string; icon: React.ReactNode; quotes: Quote[]; onOpenStock: (s: string) => void; volume?: boolean;
+}) {
+  return (
+    <div className="card overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 text-sm font-semibold text-ink-200">
+        {icon} {title}
+      </div>
+      <div className="divide-y divide-white/[0.03]">
+        {quotes.map((q) => {
+          const meta = STOCK_UNIVERSE.find((s) => s.symbol === q.symbol);
+          const spark = getCandles(q.symbol, '1M').map((c) => c.c).filter((_, i) => i % 3 === 0).slice(-30);
+          return (
+            <button
+              key={q.symbol}
+              onClick={() => onOpenStock(q.symbol)}
+              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.03] transition text-left"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-ink-100 text-sm">{q.symbol}</div>
+                <div className="text-xs text-ink-500 truncate">{meta?.name}</div>
+              </div>
+              <div className="w-16 h-9 shrink-0"><Sparkline points={spark} positive={q.changePct >= 0} /></div>
+              <div className="text-right shrink-0 w-20">
+                <div className="text-sm font-mono text-ink-100">{q.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                <div className={`text-xs font-mono ${q.changePct >= 0 ? 'text-bull' : 'text-bear'}`}>
+                  {q.changePct >= 0 ? '+' : ''}{fmtPctRaw(q.changePct)}
+                </div>
+              </div>
+              {volume && <div className="text-xs text-ink-500 w-16 text-right hidden sm:block">{q.volume > 1e9 ? (q.volume / 1e9).toFixed(1) + 'B' : q.volume > 1e6 ? (q.volume / 1e6).toFixed(1) + 'M' : (q.volume / 1e3).toFixed(0) + 'K'}</div>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
