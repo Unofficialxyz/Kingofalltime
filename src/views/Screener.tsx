@@ -1,319 +1,174 @@
-import { useMemo, useState } from "react";
-import { Search, ArrowUpDown, ChevronLeft, ChevronRight, Filter } from "lucide-react";
-import { REAL_STOCKS, ALL_REGIONS, ALL_SECTORS } from "../lib/universe";
-import { getQuote } from "../lib/dataService";
-import { useCurrency } from "../lib/currency";
-import { fmtPct, fmtCompact } from "../lib/format";
-import type { Region, Sector, Quote, StockMeta } from "../lib/types";
+import { useMemo, useState } from 'react';
+import { Filter, SlidersHorizontal } from 'lucide-react';
+import { STOCK_UNIVERSE } from '../lib/universe';
+import { getFundamentals, getCandles } from '../lib/dataService';
+import { getLiveQuote, useLiveQuotes } from '../lib/liveFeed';
+import { REGIONS, SECTORS } from '../lib/universe';
+import { analyzeTechnicals } from '../lib/indicators';
+import { scoreFundamentals } from '../lib/fundamentalScore';
+import { forecast, recommend } from '../lib/forecast';
+import { fmtCompact, fmtPctRaw, fmtNum } from '../lib/format';
+import type { Region, Sector } from '../lib/types';
 
-type SortKey = "symbol" | "name" | "price" | "changePct" | "volume" | "marketCap" | "pe";
-type SortDir = "asc" | "desc";
+interface Props { onOpenStock: (s: string) => void; }
 
 interface Filters {
-  query: string;
-  region: Region | "All";
-  sector: Sector | "All";
-  minPrice: string;
-  maxPrice: string;
-  minPe: string;
-  maxPe: string;
-  minDivYield: string;
+  region: 'all' | Region;
+  sector: 'all' | Sector;
+  minPrice: number;
+  maxPE: number;
+  minDiv: number;
+  sortBy: 'changePct' | 'marketCap' | 'pe' | 'volume' | 'dividendYield' | 'recommend';
+  sortDir: 'asc' | 'desc';
 }
 
-const DEFAULT_FILTERS: Filters = {
-  query: "",
-  region: "All",
-  sector: "All",
-  minPrice: "",
-  maxPrice: "",
-  minPe: "",
-  maxPe: "",
-  minDivYield: "",
-};
-
-const PAGE_SIZE = 50;
-
-export function Screener({ onOpenStock }: { onOpenStock: (s: string) => void }) {
-  const { formatPrice, formatCompact } = useCurrency();
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [sortKey, setSortKey] = useState<SortKey>("marketCap");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [page, setPage] = useState(0);
+export function Screener({ onOpenStock }: Props) {
+  useLiveQuotes();
+  const [filters, setFilters] = useState<Filters>({
+    region: 'all', sector: 'all', minPrice: 0, maxPE: 100, minDiv: 0,
+    sortBy: 'marketCap', sortDir: 'desc',
+  });
+  const [showFilters, setShowFilters] = useState(true);
 
   const rows = useMemo(() => {
-    const minPrice = filters.minPrice ? parseFloat(filters.minPrice) : -Infinity;
-    const maxPrice = filters.maxPrice ? parseFloat(filters.maxPrice) : Infinity;
-    const minPe = filters.minPe ? parseFloat(filters.minPe) : -Infinity;
-    const maxPe = filters.maxPe ? parseFloat(filters.maxPe) : Infinity;
-    const minDiv = filters.minDivYield ? parseFloat(filters.minDivYield) : -Infinity;
-    const q = filters.query.toUpperCase();
-
-    const out: { meta: StockMeta; q: Quote }[] = [];
-    for (const meta of REAL_STOCKS) {
-      if (q && !meta.symbol.includes(q) && !meta.name.toUpperCase().includes(q)) continue;
-      if (filters.region !== "All" && meta.region !== filters.region) continue;
-      if (filters.sector !== "All" && meta.sector !== filters.sector) continue;
-      const quote = getQuote(meta.symbol);
-      if (quote.price < minPrice || quote.price > maxPrice) continue;
-      if (quote.pe < minPe || quote.pe > maxPe) continue;
-      if (quote.divYield < minDiv) continue;
-      out.push({ meta, q: quote });
-    }
-
-    const dir = sortDir === "asc" ? 1 : -1;
+    const out = STOCK_UNIVERSE.map((s) => {
+      const q = getLiveQuote(s.symbol)!;
+      const f = getFundamentals(s.symbol)!;
+      const candles = getCandles(s.symbol, '1Y');
+      const tech = analyzeTechnicals(candles);
+      const fundScore = scoreFundamentals(f);
+      const fc = forecast(candles, f, tech);
+      const rec = recommend(tech, fundScore.score, fc, f);
+      return { meta: s, q, f, rec };
+    }).filter((r) => {
+      if (filters.region !== 'all' && r.meta.region !== filters.region) return false;
+      if (filters.sector !== 'all' && r.meta.sector !== filters.sector) return false;
+      if (r.q.price < filters.minPrice) return false;
+      if (r.q.pe > filters.maxPE) return false;
+      if (r.q.dividendYield * 100 < filters.minDiv) return false;
+      return true;
+    });
     out.sort((a, b) => {
-      let av: number | string;
-      let bv: number | string;
-      if (sortKey === "symbol") { av = a.meta.symbol; bv = b.meta.symbol; }
-      else if (sortKey === "name") { av = a.meta.name; bv = b.meta.name; }
-      else if (sortKey === "price") { av = a.q.price; bv = b.q.price; }
-      else if (sortKey === "changePct") { av = a.q.changePct; bv = b.q.changePct; }
-      else if (sortKey === "volume") { av = a.q.volume; bv = b.q.volume; }
-      else if (sortKey === "marketCap") { av = a.q.marketCap; bv = b.q.marketCap; }
-      else { av = a.q.pe; bv = b.q.pe; }
-      if (typeof av === "string" && typeof bv === "string") {
-        return av < bv ? -dir : av > bv ? dir : 0;
-      }
-      return ((av as number) - (bv as number)) * dir;
+      const dir = filters.sortDir === 'asc' ? 1 : -1;
+      if (filters.sortBy === 'recommend') return ((a.rec?.score ?? 50) - (b.rec?.score ?? 50)) * dir;
+      const key = filters.sortBy;
+      const av = key === 'dividendYield' ? a.q.dividendYield : key === 'marketCap' ? a.q.marketCap : key === 'volume' ? a.q.volume : a.q[key as 'pe' | 'changePct'];
+      const bv = key === 'dividendYield' ? b.q.dividendYield : key === 'marketCap' ? b.q.marketCap : key === 'volume' ? b.q.volume : b.q[key as 'pe' | 'changePct'];
+      return (av - bv) * dir;
     });
     return out;
-  }, [filters, sortKey, sortDir]);
-
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages - 1);
-  const pageRows = rows.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
-
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
-    setPage(0);
-  }
-
-  function resetFilters() {
-    setFilters(DEFAULT_FILTERS);
-    setPage(0);
-  }
-
-  function SortHeader({ label, k, align = "right" }: { label: string; k: SortKey; align?: "left" | "right" }) {
-    const active = sortKey === k;
-    return (
-      <button
-        onClick={() => toggleSort(k)}
-        className={`flex items-center gap-1 ${align === "left" ? "justify-start" : "justify-end"} w-full text-left ${active ? "text-brand-300" : "text-ink-400"} hover:text-ink-100 transition`}
-      >
-        {label}
-        <ArrowUpDown className={`w-3.5 h-3.5 ${active ? "opacity-100" : "opacity-40"}`} />
-      </button>
-    );
-  }
+  }, [filters]);
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      <div className="flex items-center gap-2">
-        <Filter className="w-6 h-6 text-brand-400" />
-        <h1 className="text-2xl font-bold gradient-text">Stock Screener</h1>
+    <div className="space-y-4 animate-fade-in">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-ink-50">Screener</h1>
+          <p className="text-ink-400 text-sm">Filter the global universe by region, sector, valuation and yield.</p>
+        </div>
+        <button onClick={() => setShowFilters((v) => !v)} className="btn-outline">
+          <SlidersHorizontal size={15} /> {showFilters ? 'Hide' : 'Show'} filters
+        </button>
       </div>
 
-      {/* Filters */}
-      <div className="card p-4 animate-fade-in">
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <Search className="w-4 h-4 text-ink-500 shrink-0" />
-            <input
-              type="text"
-              placeholder="Search by symbol or name..."
-              value={filters.query}
-              onChange={(e) => { setFilters((f) => ({ ...f, query: e.target.value })); setPage(0); }}
-              className="input flex-1 text-base"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-ink-500">Region</label>
-              <select
-                value={filters.region}
-                onChange={(e) => { setFilters((f) => ({ ...f, region: e.target.value as Region | "All" })); setPage(0); }}
-                className="input text-base"
-              >
-                <option value="All">All Regions</option>
-                {ALL_REGIONS.map((r) => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-ink-500">Sector</label>
-              <select
-                value={filters.sector}
-                onChange={(e) => { setFilters((f) => ({ ...f, sector: e.target.value as Sector | "All" })); setPage(0); }}
-                className="input text-base"
-              >
-                <option value="All">All Sectors</option>
-                {ALL_SECTORS.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-ink-500">Min Price</label>
-              <input
-                type="number"
-                placeholder="0"
-                value={filters.minPrice}
-                onChange={(e) => { setFilters((f) => ({ ...f, minPrice: e.target.value })); setPage(0); }}
-                className="input text-base"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-ink-500">Max Price</label>
-              <input
-                type="number"
-                placeholder="99999"
-                value={filters.maxPrice}
-                onChange={(e) => { setFilters((f) => ({ ...f, maxPrice: e.target.value })); setPage(0); }}
-                className="input text-base"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-ink-500">Min P/E</label>
-              <input
-                type="number"
-                placeholder="0"
-                value={filters.minPe}
-                onChange={(e) => { setFilters((f) => ({ ...f, minPe: e.target.value })); setPage(0); }}
-                className="input text-base"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-ink-500">Max P/E</label>
-              <input
-                type="number"
-                placeholder="100"
-                value={filters.maxPe}
-                onChange={(e) => { setFilters((f) => ({ ...f, maxPe: e.target.value })); setPage(0); }}
-                className="input text-base"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-ink-500">Min Div Yield (%)</label>
-              <input
-                type="number"
-                placeholder="0"
-                value={filters.minDivYield}
-                onChange={(e) => { setFilters((f) => ({ ...f, minDivYield: e.target.value })); setPage(0); }}
-                className="input text-base"
-              />
-            </div>
-            <div className="flex items-end">
-              <button onClick={resetFilters} className="btn-outline w-full text-base">
-                Reset Filters
-              </button>
-            </div>
+      {showFilters && (
+        <div className="card p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+          <Field label="Region">
+            <select className="input" value={filters.region} onChange={(e) => setFilters((f) => ({ ...f, region: e.target.value as Filters['region'] }))}>
+              <option value="all">All regions</option>
+              {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </Field>
+          <Field label="Sector">
+            <select className="input" value={filters.sector} onChange={(e) => setFilters((f) => ({ ...f, sector: e.target.value as Filters['sector'] }))}>
+              <option value="all">All sectors</option>
+              {SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+          <Field label="Min price">
+            <input type="number" className="input" value={filters.minPrice} onChange={(e) => setFilters((f) => ({ ...f, minPrice: +e.target.value }))} />
+          </Field>
+          <Field label="Max P/E">
+            <input type="number" className="input" value={filters.maxPE} onChange={(e) => setFilters((f) => ({ ...f, maxPE: +e.target.value }))} />
+          </Field>
+          <Field label="Min div yield %">
+            <input type="number" className="input" value={filters.minDiv} onChange={(e) => setFilters((f) => ({ ...f, minDiv: +e.target.value }))} />
+          </Field>
+          <Field label="Sort by">
+            <select className="input" value={filters.sortBy} onChange={(e) => setFilters((f) => ({ ...f, sortBy: e.target.value as Filters['sortBy'] }))}>
+              <option value="marketCap">Market cap</option>
+              <option value="changePct">Day change %</option>
+              <option value="pe">P/E</option>
+              <option value="volume">Volume</option>
+              <option value="dividendYield">Dividend yield</option>
+              <option value="recommend">Recommendation score</option>
+            </select>
+          </Field>
+          <div className="flex items-end gap-2">
+            <button
+              onClick={() => setFilters((f) => ({ ...f, sortDir: f.sortDir === 'asc' ? 'desc' : 'asc' }))}
+              className="btn-outline"
+            >{filters.sortDir === 'asc' ? '↑ Asc' : '↓ Desc'}</button>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Results count */}
-      <div className="flex items-center justify-between">
-        <span className="text-base text-ink-400">
-          Showing <span className="text-ink-100 font-semibold">{rows.length}</span> stocks
-        </span>
-        <span className="text-sm text-ink-500">
-          Page {safePage + 1} of {totalPages}
-        </span>
-      </div>
-
-      {/* Table */}
-      <div className="card overflow-hidden animate-fade-in">
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full">
+      <div className="card overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 text-sm text-ink-400">
+          <Filter size={14} /> {rows.length} matches
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/5 bg-ink-900/80">
-                <th className="px-4 py-3"><SortHeader label="Symbol" k="symbol" align="left" /></th>
-                <th className="px-4 py-3"><SortHeader label="Name" k="name" align="left" /></th>
-                <th className="px-4 py-3"><SortHeader label="Price" k="price" /></th>
-                <th className="px-4 py-3"><SortHeader label="Change %" k="changePct" /></th>
-                <th className="px-4 py-3"><SortHeader label="Volume" k="volume" /></th>
-                <th className="px-4 py-3"><SortHeader label="Market Cap" k="marketCap" /></th>
-                <th className="px-4 py-3"><SortHeader label="P/E" k="pe" /></th>
+              <tr className="text-ink-500 text-xs">
+                <th className="text-left px-4 py-2 font-medium">Symbol</th>
+                <th className="text-left px-4 py-2 font-medium hidden sm:table-cell">Name</th>
+                <th className="text-right px-4 py-2 font-medium">Price</th>
+                <th className="text-right px-4 py-2 font-medium">Chg %</th>
+                <th className="text-right px-4 py-2 font-medium hidden md:table-cell">Mkt cap</th>
+                <th className="text-right px-4 py-2 font-medium hidden md:table-cell">P/E</th>
+                <th className="text-right px-4 py-2 font-medium hidden lg:table-cell">Div %</th>
+                <th className="text-right px-4 py-2 font-medium hidden lg:table-cell">Vol</th>
+                <th className="text-right px-4 py-2 font-medium">Rec</th>
               </tr>
             </thead>
             <tbody>
-              {pageRows.map(({ meta, q }) => {
-                const up = q.changePct >= 0;
-                return (
-                  <tr
-                    key={meta.symbol}
-                    onClick={() => onOpenStock(meta.symbol)}
-                    className="border-b border-white/5 cursor-pointer hover:bg-white/5 transition"
-                  >
-                    <td className="px-4 py-3">
-                      <span className="text-base font-semibold text-ink-100">{meta.symbol}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-base text-ink-300 truncate block max-w-[200px]">{meta.name}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="text-base text-ink-100">{formatPrice(q.price)}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={`text-base font-medium ${up ? "text-bull" : "text-bear"}`}>
-                        {fmtPct(q.changePct)}
+              {rows.map((r) => (
+                <tr
+                  key={r.meta.symbol}
+                  onClick={() => onOpenStock(r.meta.symbol)}
+                  className="border-t border-white/[0.03] hover:bg-white/[0.03] cursor-pointer transition"
+                >
+                  <td className="px-4 py-2.5 font-semibold text-ink-100">{r.meta.symbol}</td>
+                  <td className="px-4 py-2.5 text-ink-400 truncate max-w-[200px] hidden sm:table-cell">{r.meta.name}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-ink-100">{fmtNum(r.q.price)}</td>
+                  <td className={`px-4 py-2.5 text-right font-mono ${r.q.changePct >= 0 ? 'text-bull' : 'text-bear'}`}>{r.q.changePct >= 0 ? '+' : ''}{fmtPctRaw(r.q.changePct)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-ink-300 hidden md:table-cell">${fmtCompact(r.q.marketCap)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-ink-300 hidden md:table-cell">{fmtNum(r.q.pe)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-ink-300 hidden lg:table-cell">{fmtPctRaw(r.q.dividendYield * 100)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-ink-400 hidden lg:table-cell">{fmtCompact(r.q.volume)}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    {r.rec && (
+                      <span className={`chip ${r.rec.action.includes('Buy') ? 'bg-bull/15 text-bull' : r.rec.action.includes('Sell') ? 'bg-bear/15 text-bear' : 'bg-accent-400/15 text-accent-400'}`}>
+                        {r.rec.action}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="text-base text-ink-300">{fmtCompact(q.volume)}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="text-base text-ink-300">{formatCompact(q.marketCap)}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="text-base text-ink-300">{q.pe.toFixed(2)}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-              {pageRows.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-base text-ink-500">
-                    No stocks match your filters.
+                    )}
                   </td>
                 </tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={safePage === 0}
-            className="btn-outline text-base disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Prev
-          </button>
-          <span className="text-base text-ink-300 px-3">
-            {safePage + 1} / {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-            disabled={safePage >= totalPages - 1}
-            className="btn-outline text-base disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Next
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs text-ink-500 mb-1">{label}</label>
+      {children}
     </div>
   );
 }

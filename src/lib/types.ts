@@ -1,25 +1,28 @@
-export type Exchange = "NSE" | "BSE" | "NASDAQ" | "NYSE" | "LSE" | "TSE" | "HKEX" | "SSE" | "ASX" | "TSX" | "KRX" | "EURONEXT" | "XETR" | "SIX" | "OMX" | "BME" | "BITA" | "BVMF" | "JSE" | "TPEX" | "SGX" | "BIST" | "TADAWUL" | "IDX" | "SET" | "KLSE" | "PSE" | "HOSE" | "VIRTUAL";
+export type Exchange =
+  | 'NYSE' | 'NASDAQ' | 'NSE' | 'BSE' | 'LSE' | 'TSE' | 'HKEX' | 'SSE' | 'SZSE'
+  | 'Euronext' | 'XETRA' | 'TSX' | 'ASX' | 'KRX' | 'NSEIL' | 'BME' | 'SIX' | 'OMX'
+  | 'BVMF' | 'TWSE' | 'SGX' | 'NSE.NG' | 'JSE' | 'TADAWUL' | 'DFM' | 'BIST' | 'WSE' | 'BIT' | 'ATH' | 'ISE';
 
-export type Region = "India" | "USA" | "Europe" | "Japan" | "China" | "HongKong" | "Australia" | "Canada" | "Korea" | "Taiwan" | "Singapore" | "Brazil" | "Mexico" | "SouthAfrica" | "SaudiArabia" | "UAE" | "Turkey" | "Indonesia" | "Thailand" | "Malaysia" | "Philippines" | "Vietnam" | "Bangladesh" | "SriLanka" | "Egypt" | "Russia" | "Poland" | "Sweden" | "Spain" | "Italy" | "Germany" | "France" | "Netherlands" | "Switzerland" | "Virtual";
+export type Region =
+  | 'United States' | 'India' | 'Europe' | 'United Kingdom' | 'Japan'
+  | 'China' | 'Hong Kong' | 'Canada' | 'Australia' | 'South Korea' | 'Germany'
+  | 'France' | 'Spain' | 'Switzerland' | 'Nordics' | 'Italy' | 'Netherlands'
+  | 'Brazil' | 'Taiwan' | 'Singapore' | 'Nigeria' | 'South Africa'
+  | 'Saudi Arabia' | 'UAE' | 'Turkey' | 'Poland' | 'Greece' | 'Ireland';
 
 export type Sector =
-  | "Technology" | "AI" | "Finance" | "Healthcare" | "Energy" | "Consumer"
-  | "Industrial" | "Materials" | "Utilities" | "RealEstate" | "Communication"
-  | "Semiconductors" | "EV" | "Fintech" | "Biotech" | "Robotics" | "CloudComputing"
-  | "Cybersecurity" | "QuantumComputing" | "RenewableEnergy" | "ECommerce" | "EdTech"
-  | "AgriTech" | "SpaceTech" | "Logistics" | "Media" | "Gaming" | "Travel"
-  | "Food" | "Retail" | "Automotive" | "Aerospace" | "Defense" | "Pharma"
-  | "Chemicals" | "Construction" | "Mining" | "Steel" | "Textiles" | "Telecom";
+  | 'Technology' | 'Financials' | 'Healthcare' | 'Consumer Discretionary'
+  | 'Consumer Staples' | 'Energy' | 'Industrials' | 'Materials'
+  | 'Communication Services' | 'Utilities' | 'Real Estate';
 
 export interface StockMeta {
   symbol: string;
   name: string;
   exchange: Exchange;
   region: Region;
+  currency: string;
   sector: Sector;
-  isAI?: boolean;
-  isVirtual?: boolean;
-  index?: number;
+  industry: string;
 }
 
 export interface Quote {
@@ -27,22 +30,24 @@ export interface Quote {
   price: number;
   change: number;
   changePct: number;
-  volume: number;
-  marketCap: number;
-  high52: number;
-  low52: number;
-  open: number;
   prevClose: number;
+  open: number;
   dayHigh: number;
   dayLow: number;
+  yearHigh: number;
+  yearLow: number;
+  volume: number;
+  avgVolume: number;
+  marketCap: number;
   pe: number;
-  pb: number;
-  divYield: number;
+  eps: number;
   beta: number;
+  dividendYield: number;
+  asOf: string;
 }
 
 export interface Candle {
-  t: number;
+  t: number; // epoch ms
   o: number;
   h: number;
   l: number;
@@ -51,49 +56,61 @@ export interface Candle {
 }
 
 export interface Fundamentals {
-  revenue: number;
-  revenueGrowth: number;
-  netIncome: number;
-  netMargin: number;
-  debtToEquity: number;
+  symbol: string;
+  pe: number;
+  forwardPe: number;
+  peg: number;
+  ps: number;
+  pb: number;
+  evEbitda: number;
   roe: number;
   roa: number;
-  currentRatio: number;
-  quickRatio: number;
+  roic: number;
   grossMargin: number;
   operatingMargin: number;
-  eps: number;
-  bookValue: number;
-  freeCashFlow: number;
+  netMargin: number;
+  debtToEquity: number;
+  currentRatio: number;
+  quickRatio: number;
+  revenueGrowth: number;
+  earningsGrowth: number;
+  fcfYield: number;
   payoutRatio: number;
-  pegRatio: number;
+  marketCap: number;
+  enterpriseValue: number;
+  sharesOut: number;
+  dividendYield: number;
+  beta: number;
 }
 
 export interface IncomeStatement {
-  year: number;
+  period: string;
   revenue: number;
-  costOfRevenue: number;
   grossProfit: number;
   operatingIncome: number;
   netIncome: number;
+  ebitda: number;
   eps: number;
 }
 
 export interface BalanceSheet {
-  year: number;
+  period: string;
   totalAssets: number;
   totalLiabilities: number;
   equity: number;
-  totalDebt: number;
   cash: number;
+  debt: number;
+  inventory: number;
+  receivables: number;
 }
 
 export interface CashFlow {
-  year: number;
-  operating: number;
-  investing: number;
-  financing: number;
-  freeCashFlow: number;
+  period: string;
+  operatingCf: number;
+  capex: number;
+  freeCf: number;
+  dividends: number;
+  netDebtIssuance: number;
 }
 
-export type Timeframe = "1D" | "1W" | "1M" | "3M" | "6M" | "1Y" | "5Y";
+export type Timeframe = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX';

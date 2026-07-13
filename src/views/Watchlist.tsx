@@ -1,107 +1,81 @@
-import { useMemo } from "react";
-import { X, Eye, Inbox } from "lucide-react";
-import { useLiveQuotes } from "../lib/hooks";
-import { useCurrency } from "../lib/currency";
-import { getCandles } from "../lib/dataService";
-import { Sparkline } from "../components/Sparkline";
-import { fmtPct, fmtCompact } from "../lib/format";
-import type { Quote } from "../lib/types";
+import { useMemo } from 'react';
+import { Star, Trash2 } from 'lucide-react';
+import { getCandles } from '../lib/dataService';
+import { getLiveQuote, useLiveQuotes } from '../lib/liveFeed';
+import { STOCK_UNIVERSE } from '../lib/universe';
+import { fmtNum, fmtPctRaw, fmtCompact } from '../lib/format';
+import { Sparkline } from '../components/Sparkline';
+import type { WatchItem } from '../lib/hooks';
 
-export function Watchlist({
-  items,
-  onOpenStock,
-  onRemove,
-  loading,
-}: {
-  items: string[];
+interface Props {
+  items: WatchItem[];
   onOpenStock: (s: string) => void;
   onRemove: (s: string) => void;
   loading: boolean;
-}) {
-  const { formatPrice, formatCompact } = useCurrency();
-  const { quotes } = useLiveQuotes(items);
+}
 
-  const sparkData = useMemo(() => {
-    const map = new Map<string, number[]>();
-    for (const sym of items) {
-      const candles = getCandles(sym, "1W");
-      map.set(sym, candles.map((c) => c.c));
-    }
-    return map;
-  }, [items]);
+export function Watchlist({ items, onOpenStock, onRemove, loading }: Props) {
+  useLiveQuotes();
+  const rows = useMemo(() =>
+    items.map((i) => {
+      const meta = STOCK_UNIVERSE.find((s) => s.symbol === i.symbol);
+      const q = getLiveQuote(i.symbol);
+      const spark = getCandles(i.symbol, '1M').map((c) => c.c).filter((_, idx) => idx % 3 === 0).slice(-30);
+      return { i, meta, q, spark };
+    }).filter((r) => r.meta && r.q),
+  [items]);
 
   return (
-    <div className="flex flex-col gap-6 w-full">
-      <div className="flex items-center gap-2">
-        <Eye className="w-6 h-6 text-brand-400" />
-        <h1 className="text-2xl font-bold gradient-text">Watchlist</h1>
-        <span className="chip bg-brand-500/15 text-brand-300 text-base ml-2">{items.length}</span>
+    <div className="space-y-4 animate-fade-in">
+      <div>
+        <h1 className="text-2xl font-bold text-ink-50 flex items-center gap-2"><Star size={20} className="text-brand-400" /> Watchlist</h1>
+        <p className="text-ink-400 text-sm">Tracked stocks, persisted across sessions.</p>
       </div>
 
-      {loading && (
-        <div className="card p-4 text-base text-ink-400 animate-fade-in">Loading quotes...</div>
+      {loading && <div className="card p-8 text-center text-ink-500 text-sm">Loading…</div>}
+
+      {!loading && rows.length === 0 && (
+        <div className="card p-10 text-center">
+          <Star size={28} className="mx-auto text-ink-600 mb-3" />
+          <p className="text-ink-300">Your watchlist is empty.</p>
+          <p className="text-ink-500 text-sm mt-1">Open any stock and tap the star to add it here.</p>
+        </div>
       )}
 
-      {items.length === 0 && !loading ? (
-        <div className="card p-12 text-center animate-fade-in">
-          <Inbox className="w-12 h-12 text-ink-600 mx-auto mb-3" />
-          <p className="text-base text-ink-400">Your watchlist is empty.</p>
-          <p className="text-sm text-ink-500 mt-1">Add stocks from the search or detail pages to track them here.</p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {items.map((sym) => {
-            const q = quotes.get(sym) as Quote | undefined;
-            if (!q) {
-              return (
-                <div key={sym} className="card p-4 animate-fade-in flex items-center justify-between">
-                  <span className="text-base font-semibold text-ink-100">{sym}</span>
-                  <span className="text-sm text-ink-500">Loading...</span>
-                </div>
-              );
-            }
-            const up = q.changePct >= 0;
-            const color = up ? "#10b981" : "#ef4444";
-            const data = sparkData.get(sym) ?? [];
-            return (
-              <div
-                key={sym}
-                className="card card-hover p-4 animate-slide-up flex items-center gap-4"
-              >
-                <button
-                  onClick={() => onOpenStock(sym)}
-                  className="flex items-center gap-4 flex-1 min-w-0 text-left"
-                >
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-base font-semibold text-ink-100">{sym}</span>
-                    <span className="text-sm text-ink-500 truncate max-w-[180px]">{"Stock " + sym}</span>
-                  </div>
-                  <Sparkline data={data} width={100} height={32} color={color} />
-                  <div className="flex flex-col items-end ml-auto">
-                    <span className="text-base font-semibold text-ink-100">{formatPrice(q.price)}</span>
-                    <span className={`text-base font-medium ${up ? "text-bull" : "text-bear"}`}>
-                      {fmtPct(q.changePct)}
-                    </span>
-                  </div>
-                  <div className="hidden sm:flex flex-col items-end min-w-[100px]">
-                    <span className="text-sm text-ink-500">Vol</span>
-                    <span className="text-base text-ink-300">{fmtCompact(q.volume)}</span>
-                  </div>
-                  <div className="hidden md:flex flex-col items-end min-w-[120px]">
-                    <span className="text-sm text-ink-500">Mkt Cap</span>
-                    <span className="text-base text-ink-300">{formatCompact(q.marketCap)}</span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => onRemove(sym)}
-                  className="text-ink-500 hover:text-bear transition p-2 rounded-lg hover:bg-white/5"
-                  title="Remove from watchlist"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            );
-          })}
+      {rows.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-ink-500 text-xs">
+                  <th className="text-left px-4 py-2 font-medium">Symbol</th>
+                  <th className="text-left px-4 py-2 font-medium hidden sm:table-cell">Name</th>
+                  <th className="text-left px-4 py-2 font-medium hidden md:table-cell">Trend</th>
+                  <th className="text-right px-4 py-2 font-medium">Price</th>
+                  <th className="text-right px-4 py-2 font-medium">Chg %</th>
+                  <th className="text-right px-4 py-2 font-medium hidden lg:table-cell">Mkt cap</th>
+                  <th className="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.i.symbol} className="border-t border-white/[0.03] hover:bg-white/[0.03] transition">
+                    <td className="px-4 py-2.5">
+                      <button onClick={() => onOpenStock(r.i.symbol)} className="font-semibold text-ink-100">{r.i.symbol}</button>
+                    </td>
+                    <td className="px-4 py-2.5 text-ink-400 truncate max-w-[200px] hidden sm:table-cell">{r.meta!.name}</td>
+                    <td className="px-4 py-2.5 hidden md:table-cell w-20"><div className="w-16 h-8"><Sparkline points={r.spark} positive={r.q!.changePct >= 0} /></div></td>
+                    <td className="px-4 py-2.5 text-right font-mono text-ink-100">{fmtNum(r.q!.price)}</td>
+                    <td className={`px-4 py-2.5 text-right font-mono ${r.q!.changePct >= 0 ? 'text-bull' : 'text-bear'}`}>{r.q!.changePct >= 0 ? '+' : ''}{fmtPctRaw(r.q!.changePct)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-ink-400 hidden lg:table-cell">${fmtCompact(r.q!.marketCap)}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button onClick={() => onRemove(r.i.symbol)} className="text-ink-500 hover:text-bear transition"><Trash2 size={15} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

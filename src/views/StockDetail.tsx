@@ -1,37 +1,15 @@
-import { useMemo, useState } from "react";
-import {
-  ArrowLeft,
-  Star,
-  Plus,
-  Brain,
-  TrendingUp,
-  TrendingDown,
-  BarChart3,
-  DollarSign,
-  Target,
-  Activity,
-  AlertTriangle,
-  CheckCircle2,
-  Zap,
-} from "lucide-react";
-import {
-  getQuote,
-  getCandles,
-  getFundamentals,
-  getIncomeStatements,
-  getBalanceSheets,
-  getCashFlows,
-  getStockMeta,
-} from "../lib/dataService";
-import { analyzeTechnicals, scoreFundamentals } from "../lib/indicators";
-import { forecast, recommend } from "../lib/forecast";
-import { generateAIAnalysis, AI_AGENTS_COUNT } from "../lib/aiAnalysis";
-import { useCurrency } from "../lib/currency";
-import { useLiveQuote } from "../lib/hooks";
-import { fmtPct, fmtNum, fmtDate, fmtCompact } from "../lib/format";
-import type { Timeframe } from "../lib/types";
+import { useMemo, useState } from 'react';
+import { Star, ArrowLeft, Plus, Minus, Target, TrendingUp, TrendingDown, Shield, Activity, Gauge } from 'lucide-react';
+import { getMeta, getCandles, getFundamentals, getIncomeStatements, getBalanceSheets, getCashFlows } from '../lib/dataService';
+import { useLiveQuote } from '../lib/liveFeed';
+import { analyzeTechnicals } from '../lib/indicators';
+import { scoreFundamentals } from '../lib/fundamentalScore';
+import { forecast, recommend } from '../lib/forecast';
+import { fmtCompact, fmtPct, fmtPctRaw, fmtPrice, fmtNum } from '../lib/format';
+import { PriceChart } from '../components/PriceChart';
+import type { Timeframe } from '../lib/types';
 
-interface StockDetailProps {
+interface Props {
   symbol: string;
   onBack: () => void;
   onOpenStock: (s: string) => void;
@@ -40,871 +18,549 @@ interface StockDetailProps {
   onAddHolding: (s: string) => void;
 }
 
-const TIMEFRAMES: Timeframe[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y"];
+type Tab = 'overview' | 'recommendation' | 'technicals' | 'fundamentals' | 'financials' | 'forecast' | 'ownership';
 
-const TABS = [
-  "AI Analysis",
-  "Overview",
-  "Recommendation",
-  "Technicals",
-  "Fundamentals",
-  "Financials",
-  "Forecast",
-  "Ownership",
-] as const;
-
-type Tab = (typeof TABS)[number];
-
-function PriceChart({
-  closes,
-  positive,
-}: {
-  closes: number[];
-  positive: boolean;
-}) {
-  const width = 760;
-  const height = 240;
-  const pad = 8;
-  if (closes.length < 2) {
-    return (
-      <div className="flex h-[240px] items-center justify-center text-slate-500 text-base">
-        Not enough data to render chart
-      </div>
-    );
-  }
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const range = max - min || 1;
-  const step = (width - pad * 2) / (closes.length - 1);
-  const color = positive ? "#10b981" : "#ef4444";
-  const points = closes.map((c, i) => {
-    const x = pad + i * step;
-    const y = pad + (height - pad * 2) * (1 - (c - min) / range);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const line = `M${points.join(" L")}`;
-  const area = `${line} L${(width - pad).toFixed(1)},${(height - pad).toFixed(1)} L${pad.toFixed(1)},${(height - pad).toFixed(1)} Z`;
-  return (
-    <svg
-      width="100%"
-      viewBox={`0 0 ${width} ${height}`}
-      className="overflow-visible"
-      preserveAspectRatio="none"
-    >
-      <defs>
-        <linearGradient id="pc-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill="url(#pc-grad)" />
-      <path
-        d={line}
-        fill="none"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-4">
-      <div className="text-sm text-slate-400">{label}</div>
-      <div className="mt-1 text-lg font-semibold text-white">{value}</div>
-      {sub ? <div className="mt-0.5 text-sm text-slate-400">{sub}</div> : null}
-    </div>
-  );
-}
-
-function SectionTitle({
-  icon,
-  children,
-}: {
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-2 text-lg font-semibold text-white">
-      <span className="text-emerald-400">{icon}</span>
-      {children}
-    </div>
-  );
-}
-
-function sentimentColor(s: string): string {
-  if (s.includes("Very Bullish")) return "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
-  if (s.includes("Bullish")) return "bg-green-500/20 text-green-300 border-green-500/40";
-  if (s.includes("Very Bearish")) return "bg-red-500/20 text-red-300 border-red-500/40";
-  if (s.includes("Bearish")) return "bg-rose-500/20 text-rose-300 border-rose-500/40";
-  return "bg-slate-500/20 text-slate-300 border-slate-500/40";
-}
-
-function actionColor(a: string): string {
-  if (a === "Strong Buy") return "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
-  if (a === "Buy") return "bg-green-500/20 text-green-300 border-green-500/40";
-  if (a === "Hold") return "bg-amber-500/20 text-amber-300 border-amber-500/40";
-  if (a === "Sell") return "bg-orange-500/20 text-orange-300 border-orange-500/40";
-  return "bg-red-500/20 text-red-300 border-red-500/40";
-}
-
-export function StockDetail(props: StockDetailProps) {
-  const { symbol, onBack, onOpenStock, watched, onToggleWatch, onAddHolding } = props;
-  const [tab, setTab] = useState<Tab>("AI Analysis");
-  const [timeframe, setTimeframe] = useState<Timeframe>("3M");
-  const { formatPrice, formatCompact } = useCurrency();
-
-  const meta = useMemo(() => getStockMeta(symbol), [symbol]);
+export function StockDetail({ symbol, onBack, watched, onToggleWatch, onAddHolding }: Props) {
+  const meta = getMeta(symbol);
   const quote = useLiveQuote(symbol);
+  const [tf, setTf] = useState<Timeframe>('1Y');
+  const [tab, setTab] = useState<Tab>('overview');
+  const candles = useMemo(() => getCandles(symbol, tf), [symbol, tf]);
+  const tech = useMemo(() => (candles.length ? analyzeTechnicals(candles) : null), [candles]);
+  const fund = useMemo(() => getFundamentals(symbol), [symbol]);
+  const fundScore = useMemo(() => (fund ? scoreFundamentals(fund) : null), [fund]);
+  const income = useMemo(() => getIncomeStatements(symbol), [symbol]);
+  const balance = useMemo(() => getBalanceSheets(symbol), [symbol]);
+  const cashflow = useMemo(() => getCashFlows(symbol), [symbol]);
+  const forecastSet = useMemo(() => (candles.length && fund ? forecast(candles, fund, tech) : null), [candles, fund, tech]);
+  const recommendation = useMemo(() => (tech ? recommend(tech, fundScore?.score ?? 50, forecastSet, fund) : null), [tech, fundScore, forecastSet, fund]);
 
-  const data = useMemo(() => {
-    const baseQuote = getQuote(symbol);
-    const candles = getCandles(symbol, timeframe);
-    const fund = getFundamentals(symbol);
-    const tech = analyzeTechnicals(candles);
-    const fundScore = scoreFundamentals(fund);
-    const fc = forecast(candles, fund, tech);
-    const rec = recommend(tech, fundScore.grade, fc);
-    const ai = generateAIAnalysis(symbol, candles, fund, tech, fundScore, fc, rec);
-    const income = getIncomeStatements(symbol);
-    const balance = getBalanceSheets(symbol);
-    const cash = getCashFlows(symbol);
-    return { baseQuote, candles, fund, tech, fundScore, fc, rec, ai, income, balance, cash };
-  }, [symbol, timeframe]);
+  if (!meta || !quote) {
+    return <div className="card p-8 text-center text-ink-400">Stock "{symbol}" not found in universe.</div>;
+  }
 
-  const liveQuote = quote ?? data.baseQuote;
-  const up = liveQuote.changePct >= 0;
-  const closes = data.candles.map((c) => c.c);
-
-  // Fake ownership data derived deterministically from symbol
-  const ownership = useMemo(() => {
-    let h = 2166136261;
-    for (let i = 0; i < symbol.length; i++) {
-      h ^= symbol.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    let a = (h >>> 0) || 1;
-    const rand = () => {
-      a |= 0;
-      a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-    const inst = [
-      { name: "Vanguard Group", pct: 8 + rand() * 6 },
-      { name: "BlackRock Inc.", pct: 6 + rand() * 6 },
-      { name: "Fidelity Mgmt", pct: 4 + rand() * 5 },
-      { name: "State Street", pct: 3 + rand() * 4 },
-      { name: "T. Rowe Price", pct: 2 + rand() * 4 },
-      { name: "Other Institutions", pct: 10 + rand() * 8 },
-    ];
-    const total = inst.reduce((s, x) => s + x.pct, 0);
-    inst.forEach((x) => (x.pct = (x.pct / total) * 100));
-    const insiders = [
-      { name: "CEO Holdings", pct: 1 + rand() * 3 },
-      { name: "CFO Holdings", pct: 0.5 + rand() * 1.5 },
-      { name: "Director Shares", pct: 0.3 + rand() * 1.2 },
-    ];
-    const majors = [
-      { name: "Goldman Sachs", shares: Math.floor(1e6 + rand() * 5e7) },
-      { name: "Morgan Stanley", shares: Math.floor(1e6 + rand() * 4e7) },
-      { name: "JPMorgan Chase", shares: Math.floor(1e6 + rand() * 3e7) },
-      { name: "Bank of America", shares: Math.floor(5e5 + rand() * 2e7) },
-    ];
-    return { inst, insiders, majors };
-  }, [symbol]);
-
-  const pieColors = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899", "#64748b"];
+  const up = quote.change >= 0;
+  const verdictColor =
+    tech?.verdict === 'Strong Buy' ? 'text-bull' :
+    tech?.verdict === 'Buy' ? 'text-bull' :
+    tech?.verdict === 'Strong Sell' ? 'text-bear' :
+    tech?.verdict === 'Sell' ? 'text-bear' : 'text-ink-300';
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
+    <div className="space-y-5 animate-fade-in">
       {/* Header */}
-      <div className="sticky top-0 z-20 border-b border-slate-700/60 bg-slate-900/90 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 py-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={onBack}
-              className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-base text-slate-200 hover:bg-slate-700"
-            >
-              <ArrowLeft className="h-5 w-5" />
-              Back
-            </button>
-            <div className="flex-1 min-w-[200px]">
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-white">{symbol}</h1>
-                <span className="rounded-md border border-slate-700 bg-slate-800 px-2 py-0.5 text-sm text-slate-300">
-                  {meta.exchange}
-                </span>
-                <span className="rounded-md border border-slate-700 bg-slate-800 px-2 py-0.5 text-sm text-slate-300">
-                  {meta.sector}
-                </span>
-              </div>
-              <div className="text-sm text-slate-400">{meta.name}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-white">
-                {formatPrice(liveQuote.price)}
-              </div>
-              <div
-                className={`flex items-center justify-end gap-1 text-base font-semibold ${
-                  up ? "text-emerald-400" : "text-red-400"
-                }`}
-              >
-                {up ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
-                {fmtPct(liveQuote.changePct)} ({formatPrice(liveQuote.change)})
-              </div>
-            </div>
-            <button
-              onClick={() => onToggleWatch(symbol)}
-              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-base ${
-                watched
-                  ? "border-amber-500/50 bg-amber-500/20 text-amber-300"
-                  : "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
-              }`}
-            >
-              <Star className={`h-5 w-5 ${watched ? "fill-amber-400" : ""}`} />
-              {watched ? "Watching" : "Watch"}
-            </button>
-            <button
-              onClick={() => onAddHolding(symbol)}
-              className="flex items-center gap-2 rounded-lg border border-emerald-500/50 bg-emerald-500/20 px-3 py-2 text-base text-emerald-300 hover:bg-emerald-500/30"
-            >
-              <Plus className="h-5 w-5" />
-              Add to Portfolio
-            </button>
+      <div className="flex items-start gap-3 flex-wrap">
+        <button onClick={onBack} className="btn-ghost -ml-2"><ArrowLeft size={16} /> Back</button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold text-ink-50">{meta.symbol}</h1>
+            <span className="chip bg-white/5 text-ink-300">{meta.exchange}</span>
+            <span className="chip bg-white/5 text-ink-400">{meta.region}</span>
+            <span className="chip bg-brand-500/10 text-brand-300">{meta.sector}</span>
           </div>
+          <p className="text-ink-400 text-sm mt-1">{meta.name} · {meta.industry}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => onAddHolding(symbol)} className="btn-outline"><Plus size={15} /> Add to portfolio</button>
+          <button onClick={() => onToggleWatch(symbol)} className={watched ? 'btn-primary' : 'btn-outline'}>
+            <Star size={15} className={watched ? 'fill-ink-950' : ''} /> {watched ? 'Watching' : 'Watch'}
+          </button>
+        </div>
+      </div>
 
-          {/* Timeframe selector */}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {TIMEFRAMES.map((tf) => (
-              <button
-                key={tf}
-                onClick={() => setTimeframe(tf)}
-                className={`rounded-lg border px-3 py-1.5 text-base ${
-                  timeframe === tf
-                    ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
-                    : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
-                }`}
-              >
-                {tf}
-              </button>
-            ))}
+      {/* Price banner */}
+      <div className="card p-5">
+        <div className="flex items-end gap-4 flex-wrap">
+          <div>
+            <div className="text-3xl font-bold font-mono text-ink-50">{fmtPrice(quote.price, meta.currency)}</div>
+            <div className={`text-sm font-mono mt-1 flex items-center gap-1 ${up ? 'text-bull' : 'text-bear'}`}>
+              {up ? <Plus size={14} /> : <Minus size={14} />}
+              {up ? '+' : ''}{fmtNum(quote.change)} ({up ? '+' : ''}{fmtPctRaw(quote.changePct)})
+              <span className="text-ink-500 ml-2">Today</span>
+            </div>
           </div>
-
-          {/* Tabs */}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {TABS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`rounded-lg border px-3 py-1.5 text-base ${
-                  tab === t
-                    ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
-                    : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
+          <div className="ml-auto grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-2 text-sm">
+            <KV label="Prev close" value={fmtPrice(quote.prevClose, meta.currency)} />
+            <KV label="Day range" value={`${fmtNum(quote.dayLow)} – ${fmtNum(quote.dayHigh)}`} />
+            <KV label="52w range" value={`${fmtNum(quote.yearLow)} – ${fmtNum(quote.yearHigh)}`} />
+            <KV label="Volume" value={fmtCompact(quote.volume)} />
+            <KV label="Mkt cap" value={`$${fmtCompact(quote.marketCap)}`} />
+            <KV label="P/E" value={fmtNum(quote.pe)} />
+            <KV label="EPS" value={fmtNum(quote.eps)} />
+            <KV label="Beta" value={fmtNum(quote.beta)} />
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        {tab === "AI Analysis" && (
-          <div className="space-y-6">
-            {/* Badges */}
-            <div className="flex flex-wrap gap-3">
-              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-base text-emerald-300">
-                <Brain className="h-5 w-5" />
-                {AI_AGENTS_COUNT.toLocaleString()} AI Agents
-              </div>
-              <div className="flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-base text-cyan-300">
-                <Zap className="h-5 w-5" />
-                1000+ Techniques Applied
-              </div>
-            </div>
-
-            {/* Summary */}
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<Brain className="h-5 w-5" />}>AI Summary</SectionTitle>
-              <p className="mt-3 text-base leading-relaxed text-slate-200">{data.ai.summary}</p>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <span
-                  className={`rounded-lg border px-3 py-1.5 text-base font-semibold ${sentimentColor(
-                    data.ai.sentiment
-                  )}`}
-                >
-                  {data.ai.sentiment}
-                </span>
-                <span className="text-base text-slate-300">
-                  Sentiment Score:{" "}
-                  <span className="font-semibold text-white">
-                    {data.ai.sentimentScore >= 0 ? "+" : ""}
-                    {data.ai.sentimentScore}
-                  </span>
-                </span>
-                <span className="text-base text-slate-300">
-                  AI Confidence:{" "}
-                  <span className="font-semibold text-white">{data.ai.aiConfidence}%</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Bull / Bear */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-emerald-700/50 bg-emerald-900/20 p-5">
-                <SectionTitle icon={<TrendingUp className="h-5 w-5" />}>Bull Case</SectionTitle>
-                <ul className="mt-3 space-y-2">
-                  {data.ai.bullCase.length === 0 ? (
-                    <li className="text-base text-slate-400">No strong bullish signals detected.</li>
-                  ) : (
-                    data.ai.bullCase.map((b, i) => (
-                      <li key={i} className="flex items-start gap-2 text-base text-slate-200">
-                        <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-400" />
-                        {b}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              </div>
-              <div className="rounded-xl border border-red-700/50 bg-red-900/20 p-5">
-                <SectionTitle icon={<TrendingDown className="h-5 w-5" />}>Bear Case</SectionTitle>
-                <ul className="mt-3 space-y-2">
-                  {data.ai.bearCase.length === 0 ? (
-                    <li className="text-base text-slate-400">No strong bearish signals detected.</li>
-                  ) : (
-                    data.ai.bearCase.map((b, i) => (
-                      <li key={i} className="flex items-start gap-2 text-base text-slate-200">
-                        <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
-                        {b}
-                      </li>
-                    ))
-                  )}
-                </ul>
-              </div>
-            </div>
-
-            {/* Pattern + ESG + Options + Insider */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-                <SectionTitle icon={<BarChart3 className="h-5 w-5" />}>Pattern Recognition</SectionTitle>
-                <p className="mt-3 text-base text-slate-200">{data.ai.patternRecognition}</p>
-              </div>
-              <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-                <SectionTitle icon={<Activity className="h-5 w-5" />}>ESG Score</SectionTitle>
-                <div className="mt-3 flex items-center gap-3">
-                  <div className="text-3xl font-bold text-white">{data.ai.esgScore}</div>
-                  <div className="text-base text-slate-400">/ 100</div>
-                </div>
-                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-700">
-                  <div
-                    className="h-2 rounded-full bg-emerald-500"
-                    style={{ width: `${data.ai.esgScore}%` }}
-                  />
-                </div>
-              </div>
-              <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-                <SectionTitle icon={<DollarSign className="h-5 w-5" />}>Options Flow</SectionTitle>
-                <p className="mt-3 text-base text-slate-200">{data.ai.optionsFlow}</p>
-              </div>
-              <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-                <SectionTitle icon={<Activity className="h-5 w-5" />}>Insider Activity</SectionTitle>
-                <p className="mt-3 text-base text-slate-200">{data.ai.insiderActivity}</p>
-              </div>
-            </div>
-
-            {/* Catalysts + Risks */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-cyan-700/50 bg-cyan-900/20 p-5">
-                <SectionTitle icon={<Zap className="h-5 w-5" />}>Catalysts</SectionTitle>
-                <ul className="mt-3 space-y-2">
-                  {data.ai.catalysts.map((c, i) => (
-                    <li key={i} className="flex items-start gap-2 text-base text-slate-200">
-                      <Zap className="mt-0.5 h-5 w-5 flex-shrink-0 text-cyan-400" />
-                      {c}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="rounded-xl border border-amber-700/50 bg-amber-900/20 p-5">
-                <SectionTitle icon={<AlertTriangle className="h-5 w-5" />}>Risk Factors</SectionTitle>
-                <ul className="mt-3 space-y-2">
-                  {data.ai.riskFactors.map((r, i) => (
-                    <li key={i} className="flex items-start gap-2 text-base text-slate-200">
-                      <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-400" />
-                      {r}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            {/* Key levels + trading suggestion */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-                <SectionTitle icon={<Target className="h-5 w-5" />}>Key Levels</SectionTitle>
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-sm text-slate-400">Support</div>
-                    <div className="text-lg font-semibold text-emerald-400">
-                      {formatPrice(data.ai.keyLevels.support)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-slate-400">Resistance</div>
-                    <div className="text-lg font-semibold text-red-400">
-                      {formatPrice(data.ai.keyLevels.resistance)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-                <SectionTitle icon={<Brain className="h-5 w-5" />}>Trading Suggestion</SectionTitle>
-                <p className="mt-3 text-base text-slate-200">{data.ai.tradingSuggestion}</p>
-              </div>
-            </div>
+      {/* Verdict strip */}
+      {tech && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="card p-4">
+            <div className="text-xs text-ink-500">Recommendation</div>
+            <div className={`text-lg font-bold ${recommendation ? (recommendation.action.includes('Buy') ? 'text-bull' : recommendation.action.includes('Sell') ? 'text-bear' : 'text-accent-400') : 'text-ink-300'}`}>{recommendation?.action ?? '—'}</div>
+            <div className="text-xs text-ink-500">{recommendation ? `${recommendation.score}/100 · ${recommendation.confidence}% conf` : 'n/a'}</div>
           </div>
-        )}
-
-        {tab === "Overview" && (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<BarChart3 className="h-5 w-5" />}>
-                Price Chart ({timeframe})
-              </SectionTitle>
-              <div className="mt-4">
-                <PriceChart closes={closes} positive={up} />
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <StatCard label="Price" value={formatPrice(liveQuote.price)} />
-              <StatCard
-                label="Change"
-                value={fmtPct(liveQuote.changePct)}
-                sub={formatPrice(liveQuote.change)}
-              />
-              <StatCard label="Volume" value={fmtCompact(liveQuote.volume)} />
-              <StatCard label="Market Cap" value={formatCompact(liveQuote.marketCap)} />
-              <StatCard
-                label="52W High"
-                value={formatPrice(liveQuote.high52)}
-              />
-              <StatCard
-                label="52W Low"
-                value={formatPrice(liveQuote.low52)}
-              />
-              <StatCard label="P/E Ratio" value={fmtNum(liveQuote.pe)} />
-              <StatCard label="P/B Ratio" value={fmtNum(liveQuote.pb)} />
-              <StatCard
-                label="Dividend Yield"
-                value={fmtPct(liveQuote.divYield)}
-              />
-              <StatCard label="Beta" value={fmtNum(liveQuote.beta)} />
-              <StatCard label="Open" value={formatPrice(liveQuote.open)} />
-              <StatCard label="Prev Close" value={formatPrice(liveQuote.prevClose)} />
-            </div>
+          <div className="card p-4">
+            <div className="text-xs text-ink-500">Technical verdict</div>
+            <div className={`text-lg font-bold ${verdictColor}`}>{tech.verdict}</div>
+            <div className="text-xs text-ink-500">Score {tech.score}/100</div>
           </div>
-        )}
-
-        {tab === "Recommendation" && (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<Target className="h-5 w-5" />}>AI Recommendation</SectionTitle>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <span
-                  className={`rounded-lg border px-4 py-2 text-lg font-bold ${actionColor(
-                    data.rec.action
-                  )}`}
-                >
-                  {data.rec.action}
-                </span>
-                <span className="text-base text-slate-300">
-                  Confidence:{" "}
-                  <span className="font-semibold text-white">
-                    {Math.round(data.rec.confidence * 100)}%
-                  </span>
-                </span>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <StatCard label="Target Price" value={formatPrice(data.rec.targetPrice)} />
-              <StatCard label="Stop Loss" value={formatPrice(data.rec.stopLoss)} />
-              <StatCard label="Risk Level" value={data.rec.riskLevel} />
-              <StatCard label="Time Horizon" value={data.rec.timeHorizon} />
-              <StatCard
-                label="Confidence"
-                value={`${Math.round(data.rec.confidence * 100)}%`}
-              />
-              <StatCard
-                label="Upside"
-                value={fmtPct(
-                  ((data.rec.targetPrice - liveQuote.price) / liveQuote.price) * 100
-                )}
-              />
-            </div>
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<Brain className="h-5 w-5" />}>Rationale</SectionTitle>
-              <ul className="mt-3 space-y-2">
-                {data.rec.rationale.map((r, i) => (
-                  <li key={i} className="flex items-start gap-2 text-base text-slate-200">
-                    <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-400" />
-                    {r}
-                  </li>
-                ))}
-              </ul>
-            </div>
+          <div className="card p-4">
+            <div className="text-xs text-ink-500">Forecast (1Y base)</div>
+            <div className="text-lg font-semibold text-ink-100">{forecastSet ? fmtNum(forecastSet.base.targetPrice) : '—'}</div>
+            <div className={`text-xs ${forecastSet && forecastSet.base.expectedReturnPct >= 0 ? 'text-bull' : 'text-bear'}`}>{forecastSet ? `${forecastSet.base.expectedReturnPct >= 0 ? '+' : ''}${forecastSet.base.expectedReturnPct}%` : 'n/a'}</div>
           </div>
-        )}
-
-        {tab === "Technicals" && (
-          <div className="space-y-6">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <StatCard label="RSI (14)" value={fmtNum(data.tech.rsi)} sub="Momentum" />
-              <StatCard label="MACD" value={fmtNum(data.tech.macd)} sub={`Signal ${fmtNum(data.tech.macdSignal)}`} />
-              <StatCard label="SMA 50" value={formatPrice(data.tech.sma50)} />
-              <StatCard label="SMA 200" value={formatPrice(data.tech.sma200)} />
-              <StatCard label="EMA 12" value={formatPrice(data.tech.ema12)} />
-              <StatCard label="EMA 26" value={formatPrice(data.tech.ema26)} />
-              <StatCard
-                label="Bollinger Upper"
-                value={formatPrice(data.tech.bollUpper)}
-              />
-              <StatCard
-                label="Bollinger Lower"
-                value={formatPrice(data.tech.bollLower)}
-              />
-              <StatCard label="ATR (14)" value={fmtNum(data.tech.atr)} />
-              <StatCard label="ADX (14)" value={fmtNum(data.tech.adx)} />
-              <StatCard label="Stochastic %K" value={fmtNum(data.tech.stoch)} />
-              <StatCard label="VWAP" value={formatPrice(data.tech.vwap)} />
-              <StatCard label="OBV" value={fmtCompact(data.tech.obv)} />
-              <StatCard label="CCI (20)" value={fmtNum(data.tech.cci)} />
-              <StatCard label="Williams %R" value={fmtNum(data.tech.williamsR)} />
-              <StatCard label="MFI (14)" value={fmtNum(data.tech.mfi)} />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <StatCard label="Trend" value={data.tech.trend} />
-              <StatCard label="Momentum" value={data.tech.momentum} />
-              <StatCard label="Volatility" value={data.tech.volatility} />
-            </div>
+          <div className="card p-4">
+            <div className="text-xs text-ink-500">Fundamental grade</div>
+            <div className={`text-lg font-bold ${fundScore ? (fundScore.grade.startsWith('A') ? 'text-bull' : fundScore.grade === 'F' ? 'text-bear' : 'text-ink-100') : 'text-ink-500'}`}>{fundScore?.grade ?? '—'}</div>
+            <div className="text-xs text-ink-500">{fundScore ? `${fundScore.score}/100` : 'n/a'}</div>
           </div>
-        )}
+        </div>
+      )}
 
-        {tab === "Fundamentals" && (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<BarChart3 className="h-5 w-5" />}>Fundamental Score</SectionTitle>
-              <div className="mt-4 flex items-center gap-4">
-                <div className="text-5xl font-bold text-emerald-400">{data.fundScore.grade}</div>
-                <div>
-                  <div className="text-2xl font-semibold text-white">
-                    {data.fundScore.score}
-                    <span className="text-base text-slate-400"> / 100</span>
-                  </div>
-                  <div className="text-base text-slate-400">Fundamental Grade</div>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<Activity className="h-5 w-5" />}>Score Breakdown</SectionTitle>
-              <div className="mt-4 space-y-3">
-                {data.fundScore.details.map((d, i) => (
-                  <div key={i}>
-                    <div className="flex items-center justify-between text-base">
-                      <span className="text-slate-200">{d.label}</span>
-                      <span className="text-slate-400">
-                        {fmtNum(d.value)} / {fmtNum(d.score, 1)} pts
-                      </span>
-                    </div>
-                    <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-700">
-                      <div
-                        className="h-2 rounded-full bg-emerald-500"
-                        style={{ width: `${Math.min(100, (d.score / 15) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "Financials" && (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<DollarSign className="h-5 w-5" />}>Income Statements</SectionTitle>
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-base">
-                  <thead>
-                    <tr className="border-b border-slate-700 text-left text-slate-400">
-                      <th className="py-2 pr-4">Year</th>
-                      <th className="py-2 pr-4">Revenue</th>
-                      <th className="py-2 pr-4">Gross Profit</th>
-                      <th className="py-2 pr-4">Operating Income</th>
-                      <th className="py-2 pr-4">Net Income</th>
-                      <th className="py-2 pr-4">EPS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.income.map((row) => (
-                      <tr key={row.year} className="border-b border-slate-800">
-                        <td className="py-2 pr-4 text-slate-300">{row.year}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.revenue)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.grossProfit)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.operatingIncome)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.netIncome)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtNum(row.eps)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<BarChart3 className="h-5 w-5" />}>Balance Sheets</SectionTitle>
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-base">
-                  <thead>
-                    <tr className="border-b border-slate-700 text-left text-slate-400">
-                      <th className="py-2 pr-4">Year</th>
-                      <th className="py-2 pr-4">Total Assets</th>
-                      <th className="py-2 pr-4">Total Liabilities</th>
-                      <th className="py-2 pr-4">Equity</th>
-                      <th className="py-2 pr-4">Total Debt</th>
-                      <th className="py-2 pr-4">Cash</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.balance.map((row) => (
-                      <tr key={row.year} className="border-b border-slate-800">
-                        <td className="py-2 pr-4 text-slate-300">{row.year}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.totalAssets)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.totalLiabilities)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.equity)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.totalDebt)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.cash)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<Activity className="h-5 w-5" />}>Cash Flows</SectionTitle>
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-base">
-                  <thead>
-                    <tr className="border-b border-slate-700 text-left text-slate-400">
-                      <th className="py-2 pr-4">Year</th>
-                      <th className="py-2 pr-4">Operating</th>
-                      <th className="py-2 pr-4">Investing</th>
-                      <th className="py-2 pr-4">Financing</th>
-                      <th className="py-2 pr-4">Free Cash Flow</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.cash.map((row) => (
-                      <tr key={row.year} className="border-b border-slate-800">
-                        <td className="py-2 pr-4 text-slate-300">{row.year}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.operating)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.investing)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.financing)}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtCompact(row.freeCashFlow)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "Forecast" && (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<TrendingUp className="h-5 w-5" />}>AI Forecast</SectionTitle>
-              <div className="mt-4 flex flex-wrap items-center gap-4">
-                <span className="text-base text-slate-300">
-                  Trend Direction:{" "}
-                  <span className="font-semibold text-white">{data.fc.trendDirection}</span>
-                </span>
-                <span className="text-base text-slate-300">
-                  Expected Return:{" "}
-                  <span
-                    className={`font-semibold ${
-                      data.fc.expectedReturn >= 0 ? "text-emerald-400" : "text-red-400"
-                    }`}
-                  >
-                    {fmtPct(data.fc.expectedReturn)}
-                  </span>
-                </span>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <StatCard
-                label={`Short Term (${data.fc.short.period})`}
-                value={formatPrice(data.fc.short.targetPrice)}
-                sub={`Low ${formatPrice(data.fc.short.low)} / High ${formatPrice(data.fc.short.high)}`}
-              />
-              <StatCard
-                label={`Medium Term (${data.fc.medium.period})`}
-                value={formatPrice(data.fc.medium.targetPrice)}
-                sub={`Low ${formatPrice(data.fc.medium.low)} / High ${formatPrice(data.fc.medium.high)}`}
-              />
-              <StatCard
-                label={`Long Term (${data.fc.long.period})`}
-                value={formatPrice(data.fc.long.targetPrice)}
-                sub={`Low ${formatPrice(data.fc.long.low)} / High ${formatPrice(data.fc.long.high)}`}
-              />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <StatCard
-                label="Short Confidence"
-                value={`${Math.round(data.fc.short.confidence * 100)}%`}
-              />
-              <StatCard
-                label="Medium Confidence"
-                value={`${Math.round(data.fc.medium.confidence * 100)}%`}
-              />
-              <StatCard
-                label="Long Confidence"
-                value={`${Math.round(data.fc.long.confidence * 100)}%`}
-              />
-            </div>
-          </div>
-        )}
-
-        {tab === "Ownership" && (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<BarChart3 className="h-5 w-5" />}>
-                Institutional Holdings
-              </SectionTitle>
-              <div className="mt-4 flex flex-col items-center gap-6 md:flex-row">
-                <svg viewBox="0 0 200 200" width="220" height="220" className="flex-shrink-0">
-                  {(() => {
-                    let acc = 0;
-                    return ownership.inst.map((seg, i) => {
-                      const start = acc;
-                      acc += seg.pct;
-                      const a0 = (start / 100) * 2 * Math.PI - Math.PI / 2;
-                      const a1 = (acc / 100) * 2 * Math.PI - Math.PI / 2;
-                      const large = seg.pct > 50 ? 1 : 0;
-                      const x0 = 100 + 90 * Math.cos(a0);
-                      const y0 = 100 + 90 * Math.sin(a0);
-                      const x1 = 100 + 90 * Math.cos(a1);
-                      const y1 = 100 + 90 * Math.sin(a1);
-                      return (
-                        <path
-                          key={i}
-                          d={`M100,100 L${x0.toFixed(1)},${y0.toFixed(1)} A90,90 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z`}
-                          fill={pieColors[i % pieColors.length]}
-                          stroke="#0f172a"
-                          strokeWidth={1.5}
-                        />
-                      );
-                    });
-                  })()}
-                  <circle cx="100" cy="100" r="40" fill="#0f172a" stroke="#1e293b" strokeWidth={2} />
-                  <text
-                    x="100"
-                    y="100"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fill="#e2e8f0"
-                    fontSize="14"
-                    fontWeight="700"
-                  >
-                    Inst.
-                  </text>
-                </svg>
-                <div className="flex-1 space-y-2">
-                  {ownership.inst.map((seg, i) => (
-                    <div key={i} className="flex items-center gap-3 text-base">
-                      <span
-                        className="h-4 w-4 flex-shrink-0 rounded"
-                        style={{ backgroundColor: pieColors[i % pieColors.length] }}
-                      />
-                      <span className="flex-1 text-slate-200">{seg.name}</span>
-                      <span className="font-semibold text-white">{fmtNum(seg.pct)}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<Activity className="h-5 w-5" />}>Insider Holdings</SectionTitle>
-              <div className="mt-4 space-y-2">
-                {ownership.insiders.map((ins, i) => (
-                  <div key={i} className="flex items-center justify-between text-base">
-                    <span className="text-slate-200">{ins.name}</span>
-                    <span className="font-semibold text-white">{fmtNum(ins.pct)}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-              <SectionTitle icon={<DollarSign className="h-5 w-5" />}>Major Shareholders</SectionTitle>
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-base">
-                  <thead>
-                    <tr className="border-b border-slate-700 text-left text-slate-400">
-                      <th className="py-2 pr-4">Institution</th>
-                      <th className="py-2 pr-4">Shares Held</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ownership.majors.map((m, i) => (
-                      <tr key={i} className="border-b border-slate-800">
-                        <td className="py-2 pr-4 text-slate-200">{m.name}</td>
-                        <td className="py-2 pr-4 text-slate-200">{fmtNum(m.shares, 0)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Footer quick nav */}
-      <div className="mx-auto max-w-6xl px-4 pb-10">
-        <div className="flex flex-wrap gap-2 border-t border-slate-700/60 pt-6">
-          {TABS.map((t) => (
+      {/* Chart */}
+      <div className="card p-5">
+        <div className="flex items-center gap-1 mb-3 flex-wrap">
+          {(['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'MAX'] as Timeframe[]).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
-              className={`rounded-lg border px-3 py-1.5 text-base ${
-                tab === t
-                  ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
-                  : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
-              }`}
-            >
-              {t}
-            </button>
+              onClick={() => setTf(t)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${tf === t ? 'bg-brand-500 text-ink-950' : 'text-ink-400 hover:bg-white/5'}`}
+            >{t}</button>
           ))}
         </div>
-        <div className="mt-4 text-sm text-slate-500">
-          {meta.name} ({symbol}) on {meta.exchange} - {meta.region} - {meta.sector}
+        <PriceChart candles={candles} currency={meta.currency} timeframe={tf} />
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-white/5 overflow-x-auto no-scrollbar">
+        {(['overview', 'recommendation', 'technicals', 'fundamentals', 'financials', 'forecast', 'ownership'] as Tab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2.5 text-sm font-medium capitalize border-b-2 transition whitespace-nowrap ${tab === t ? 'tab-active' : 'border-transparent text-ink-400 hover:text-ink-200'}`}
+          >{t}</button>
+        ))}
+      </div>
+
+      {tab === 'overview' && tech && fund && fundScore && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="card p-5">
+            <h3 className="font-semibold text-ink-100 mb-3">Technical snapshot</h3>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <KV label="RSI (14)" value={fmtNum(tech.rsi)} />
+              <KV label="MACD" value={fmtNum(tech.macd, 4)} />
+              <KV label="MACD signal" value={fmtNum(tech.macdSignal, 4)} />
+              <KV label="MACD trend" value={tech.macdTrend} />
+              <KV label="SMA 20" value={fmtNum(tech.sma20)} />
+              <KV label="SMA 50" value={fmtNum(tech.sma50)} />
+              <KV label="SMA 200" value={fmtNum(tech.sma200)} />
+              <KV label="ATR (14)" value={fmtNum(tech.atr)} />
+              <KV label="Stoch %K" value={fmtNum(tech.stochK)} />
+              <KV label="Stoch %D" value={fmtNum(tech.stochD)} />
+              <KV label="VWAP" value={fmtNum(tech.vwap)} />
+              <KV label="ADX" value={fmtNum(tech.adx)} />
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/5">
+              <div className="text-xs text-ink-500 mb-2">Key levels</div>
+              <div className="flex flex-wrap gap-2">
+                {tech.resistances.map((r, i) => (
+                  <span key={i} className="chip bg-bear/10 text-bear">R {fmtNum(r)}</span>
+                ))}
+                {tech.supports.map((s, i) => (
+                  <span key={i} className="chip bg-bull/10 text-bull">S {fmtNum(s)}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="card p-5">
+            <h3 className="font-semibold text-ink-100 mb-3">Fundamental snapshot</h3>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <KV label="P/E (ttm)" value={fmtNum(fund.pe)} />
+              <KV label="Fwd P/E" value={fmtNum(fund.forwardPe)} />
+              <KV label="PEG" value={fmtNum(fund.peg)} />
+              <KV label="P/S" value={fmtNum(fund.ps)} />
+              <KV label="P/B" value={fmtNum(fund.pb)} />
+              <KV label="EV/EBITDA" value={fmtNum(fund.evEbitda)} />
+              <KV label="ROE" value={fmtPct(fund.roe)} />
+              <KV label="ROA" value={fmtPct(fund.roa)} />
+              <KV label="Net margin" value={fmtPct(fund.netMargin)} />
+              <KV label="D/E" value={fmtNum(fund.debtToEquity)} />
+              <KV label="Rev growth" value={fmtPct(fund.revenueGrowth)} />
+              <KV label="Div yield" value={fmtPct(fund.dividendYield)} />
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/5">
+              <div className="text-xs text-ink-500 mb-1">Analyst-style verdict</div>
+              <p className="text-sm text-ink-200">{fundScore.verdict}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'technicals' && tech && (
+        <div className="space-y-4">
+          <div className="card p-5">
+            <h3 className="font-semibold text-ink-100 mb-4">Indicator matrix</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <IndicatorCard name="RSI (14)" value={fmtNum(tech.rsi)} signal={tech.rsiSignal} good={tech.rsi < 70 && tech.rsi > 30} />
+              <IndicatorCard name="MACD (12,26,9)" value={fmtNum(tech.macd, 4)} signal={tech.macdTrend} good={tech.macdTrend === 'Bullish'} />
+              <IndicatorCard name="Stochastic %K" value={fmtNum(tech.stochK)} signal={tech.stochK > 80 ? 'Overbought' : tech.stochK < 20 ? 'Oversold' : 'Neutral'} good={tech.stochK <= 80 && tech.stochK >= 20} />
+              <IndicatorCard name="ADX (14)" value={fmtNum(tech.adx)} signal={tech.adxTrend} good={tech.adx > 20} />
+              <IndicatorCard name="SMA 20" value={fmtNum(tech.sma20)} signal={tech.aboveSma20 ? 'Price above' : 'Price below'} good={tech.aboveSma20} />
+              <IndicatorCard name="SMA 50" value={fmtNum(tech.sma50)} signal={tech.aboveSma50 ? 'Price above' : 'Price below'} good={tech.aboveSma50} />
+              <IndicatorCard name="SMA 200" value={fmtNum(tech.sma200)} signal={tech.aboveSma200 ? 'Price above' : 'Price below'} good={tech.aboveSma200} />
+              <IndicatorCard name="Bollinger Bands" value={`${fmtNum(tech.bbLower)} – ${fmtNum(tech.bbUpper)}`} signal={`Near ${tech.bbPosition}`} good={tech.bbPosition === 'Middle'} />
+              <IndicatorCard name="VWAP" value={fmtNum(tech.vwap)} signal={quote.price > tech.vwap ? 'Above VWAP' : 'Below VWAP'} good={quote.price > tech.vwap} />
+            </div>
+          </div>
+          <div className="card p-5">
+            <h3 className="font-semibold text-ink-100 mb-3">Support & resistance</h3>
+            <div className="space-y-2">
+              {[...tech.resistances].reverse().map((r, i) => (
+                <LevelBar key={`r${i}`} label="Resistance" level={r} price={quote.price} tone="bear" />
+              ))}
+              <LevelBar label="Current" level={quote.price} price={quote.price} tone="neutral" current />
+              {[...tech.supports].reverse().map((s, i) => (
+                <LevelBar key={`s${i}`} label="Support" level={s} price={quote.price} tone="bull" />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'fundamentals' && fund && fundScore && (
+        <div className="space-y-4">
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-ink-100">Fundamental scorecard</h3>
+              <div className="text-right">
+                <div className={`text-2xl font-bold ${fundScore.grade.startsWith('A') ? 'text-bull' : fundScore.grade === 'F' ? 'text-bear' : 'text-ink-100'}`}>{fundScore.grade}</div>
+                <div className="text-xs text-ink-500">{fundScore.score}/100</div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {fundScore.pillars.map((p) => (
+                <div key={p.name}>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-ink-200">{p.name}</span>
+                    <span className="text-ink-400">{p.score}/100 · <span className="text-ink-500">{p.note}</span></span>
+                  </div>
+                  <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${p.score >= 65 ? 'bg-bull' : p.score >= 45 ? 'bg-accent-400' : 'bg-bear'}`}
+                      style={{ width: `${p.score}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 pt-4 border-t border-white/5 text-sm text-ink-300">{fundScore.verdict}</p>
+          </div>
+          <div className="card p-5">
+            <h3 className="font-semibold text-ink-100 mb-3">Full ratios</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm">
+              <KV label="P/E (ttm)" value={fmtNum(fund.pe)} />
+              <KV label="Forward P/E" value={fmtNum(fund.forwardPe)} />
+              <KV label="PEG ratio" value={fmtNum(fund.peg)} />
+              <KV label="P/S" value={fmtNum(fund.ps)} />
+              <KV label="P/B" value={fmtNum(fund.pb)} />
+              <KV label="EV/EBITDA" value={fmtNum(fund.evEbitda)} />
+              <KV label="ROE" value={fmtPct(fund.roe)} />
+              <KV label="ROA" value={fmtPct(fund.roa)} />
+              <KV label="ROIC" value={fmtPct(fund.roic)} />
+              <KV label="Gross margin" value={fmtPct(fund.grossMargin)} />
+              <KV label="Op margin" value={fmtPct(fund.operatingMargin)} />
+              <KV label="Net margin" value={fmtPct(fund.netMargin)} />
+              <KV label="Debt/equity" value={fmtNum(fund.debtToEquity)} />
+              <KV label="Current ratio" value={fmtNum(fund.currentRatio)} />
+              <KV label="Quick ratio" value={fmtNum(fund.quickRatio)} />
+              <KV label="Rev growth" value={fmtPct(fund.revenueGrowth)} />
+              <KV label="EPS growth" value={fmtPct(fund.earningsGrowth)} />
+              <KV label="FCF yield" value={fmtPct(fund.fcfYield)} />
+              <KV label="Payout ratio" value={fmtPct(fund.payoutRatio)} />
+              <KV label="Div yield" value={fmtPct(fund.dividendYield)} />
+              <KV label="Beta" value={fmtNum(fund.beta)} />
+              <KV label="Shares out" value={fmtCompact(fund.sharesOut)} />
+              <KV label="EV" value={`$${fmtCompact(fund.enterpriseValue)}`} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'financials' && (
+        <div className="space-y-4">
+          <FinancialTable title="Income statement" rows={income.map((i) => ({ ...i }))} columns={['revenue', 'grossProfit', 'operatingIncome', 'netIncome', 'ebitda', 'eps']} labels={{ revenue: 'Revenue', grossProfit: 'Gross profit', operatingIncome: 'Operating income', netIncome: 'Net income', ebitda: 'EBITDA', eps: 'EPS' }} />
+          <FinancialTable title="Balance sheet" rows={balance.map((b) => ({ ...b }))} columns={['totalAssets', 'totalLiabilities', 'equity', 'cash', 'debt', 'inventory', 'receivables']} labels={{ totalAssets: 'Total assets', totalLiabilities: 'Total liabilities', equity: 'Equity', cash: 'Cash', debt: 'Debt', inventory: 'Inventory', receivables: 'Receivables' }} />
+          <FinancialTable title="Cash flow" rows={cashflow.map((c) => ({ ...c }))} columns={['operatingCf', 'capex', 'freeCf', 'dividends', 'netDebtIssuance']} labels={{ operatingCf: 'Operating CF', capex: 'Capex', freeCf: 'Free CF', dividends: 'Dividends paid', netDebtIssuance: 'Net debt issuance' }} />
+        </div>
+      )}
+
+      {tab === 'recommendation' && recommendation && (
+        <div className="space-y-4">
+          {/* Big recommendation card */}
+          <div className="card p-6 relative overflow-hidden">
+            <div className={`absolute -right-16 -top-16 w-56 h-56 rounded-full blur-3xl ${recommendation.action.includes('Buy') ? 'bg-bull/10' : recommendation.action.includes('Sell') ? 'bg-bear/10' : 'bg-accent-400/10'}`} />
+            <div className="relative flex flex-col sm:flex-row sm:items-center gap-6">
+              <div className="text-center sm:text-left">
+                <div className="text-xs text-ink-500 mb-1">Final recommendation</div>
+                <div className={`text-4xl font-bold ${recommendation.action.includes('Buy') ? 'text-bull' : recommendation.action.includes('Sell') ? 'text-bear' : 'text-accent-400'}`}>{recommendation.action}</div>
+                <div className="text-sm text-ink-400 mt-1">{recommendation.horizon} · {recommendation.confidence}% confidence</div>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between text-xs text-ink-500 mb-1">
+                  <span>Blended score</span>
+                  <span className="font-mono text-ink-200">{recommendation.score}/100</span>
+                </div>
+                <div className="h-3 rounded-full bg-white/5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${recommendation.score >= 62 ? 'bg-bull' : recommendation.score <= 42 ? 'bg-bear' : 'bg-accent-400'}`}
+                    style={{ width: `${recommendation.score}%` }}
+                  />
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+                  <ScorePill label="Technical" value={recommendation.technicalScore} />
+                  <ScorePill label="Fundamental" value={recommendation.fundamentalScore} />
+                  <ScorePill label="Forecast" value={recommendation.forecastScore} />
+                  <ScorePill label="Risk" value={recommendation.riskScore} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Signal matrix */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-ink-100 mb-4 flex items-center gap-2"><Gauge size={16} /> Signal matrix</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {recommendation.signals.map((s) => (
+                <div key={s.name} className="rounded-xl border border-white/5 bg-ink-950/40 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-ink-400">{s.name}</span>
+                    <span className={`chip ${s.signal === 'bullish' ? 'bg-bull/15 text-bull' : s.signal === 'bearish' ? 'bg-bear/15 text-bear' : 'bg-white/5 text-ink-400'}`}>
+                      {s.signal === 'bullish' ? <TrendingUp size={11} /> : s.signal === 'bearish' ? <TrendingDown size={11} /> : <Activity size={11} />}
+                      {s.signal}
+                    </span>
+                  </div>
+                  <div className="text-sm text-ink-200 mt-1">{s.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Rationale */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-ink-100 mb-3">Rationale</h3>
+            <ul className="space-y-2">
+              {recommendation.rationale.map((r, i) => (
+                <li key={i} className="text-sm text-ink-300 flex gap-2">
+                  <span className="text-brand-400 mt-0.5">•</span> {r}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {tab === 'forecast' && forecastSet && (
+        <div className="space-y-4">
+          {/* Consensus */}
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-1">
+              <Target size={18} className="text-brand-400" />
+              <h3 className="font-semibold text-ink-100">Price forecast & scenarios</h3>
+            </div>
+            <p className="text-xs text-ink-500 mb-4">1-year forward projections from trend regression, momentum, fundamentals and volatility bands.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <ScenarioCard label="Bear case" forecast={forecastSet.bear} tone="bear" price={quote.price} />
+              <ScenarioCard label="Base case" forecast={forecastSet.base} tone="neutral" price={quote.price} highlight />
+              <ScenarioCard label="Bull case" forecast={forecastSet.bull} tone="bull" price={quote.price} />
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
+              <div>
+                <div className="text-xs text-ink-500">Consensus</div>
+                <div className={`text-xl font-bold ${forecastSet.consensus.includes('Buy') ? 'text-bull' : forecastSet.consensus.includes('Sell') ? 'text-bear' : 'text-accent-400'}`}>{forecastSet.consensus}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-ink-500">Score</div>
+                <div className="text-xl font-mono text-ink-100">{forecastSet.consensusScore > 0 ? '+' : ''}{forecastSet.consensusScore}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Price target bar */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-ink-100 mb-4">Price target range (1Y)</h3>
+            <PriceTargetBar current={quote.price} targets={forecastSet.priceTargets} />
+          </div>
+
+          {/* Market conditions */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <CondCard label="Trend" value={forecastSet.trendDirection} icon={<TrendingUp size={15} />} />
+            <CondCard label="Momentum" value={forecastSet.momentum} icon={<Activity size={15} />} />
+            <CondCard label="Volatility" value={forecastSet.volatility} icon={<Gauge size={15} />} />
+            <CondCard label="Risk level" value={forecastSet.riskLevel} icon={<Shield size={15} />} />
+          </div>
+
+          {/* Notes */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-ink-100 mb-3">Analysis notes</h3>
+            <ul className="space-y-2">
+              {forecastSet.notes.map((n, i) => (
+                <li key={i} className="text-sm text-ink-300 flex gap-2">
+                  <span className="text-brand-400 mt-0.5">•</span> {n}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {tab === 'ownership' && (
+        <div className="card p-8 text-center text-ink-400 text-sm">
+          Ownership / institutional holder breakdown requires a live data feed.
+          The app is wired to accept one — drop in an API key in <code className="text-ink-200">src/lib/dataService.ts</code> to populate this tab.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KV({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-ink-500">{label}</div>
+      <div className="text-ink-100 font-mono">{value}</div>
+    </div>
+  );
+}
+
+function IndicatorCard({ name, value, signal, good }: { name: string; value: string; signal: string; good: boolean }) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-ink-950/40 p-3">
+      <div className="text-xs text-ink-500">{name}</div>
+      <div className="text-base font-mono text-ink-100 mt-0.5">{value}</div>
+      <div className={`text-xs mt-1 ${good ? 'text-bull' : 'text-bear'}`}>{signal}</div>
+    </div>
+  );
+}
+
+function LevelBar({ label, level, price, tone, current }: { label: string; level: number; price: number; tone: 'bull' | 'bear' | 'neutral'; current?: boolean }) {
+  const dist = Math.abs(level - price) / price * 100;
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      <span className={`w-20 text-xs ${tone === 'bull' ? 'text-bull' : tone === 'bear' ? 'text-bear' : 'text-ink-300'}`}>{label}</span>
+      <span className="w-24 font-mono text-ink-100">{fmtNum(level)}</span>
+      {current ? (
+        <span className="chip bg-brand-500/15 text-brand-300">current</span>
+      ) : (
+        <span className="text-xs text-ink-500">{dist.toFixed(1)}% away</span>
+      )}
+    </div>
+  );
+}
+
+function FinancialTable({ title, rows, columns, labels }: {
+  title: string;
+  rows: Record<string, number | string>[];
+  columns: string[];
+  labels: Record<string, string>;
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/5 font-semibold text-ink-100 text-sm">{title}</div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-ink-500 text-xs">
+              <th className="text-left px-4 py-2 font-medium">Metric</th>
+              {rows.map((r) => <th key={r.period as string} className="text-right px-4 py-2 font-medium">{r.period}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {columns.map((c) => (
+              <tr key={c} className="border-t border-white/[0.03]">
+                <td className="px-4 py-2 text-ink-300">{labels[c]}</td>
+                {rows.map((r) => (
+                  <td key={r.period as string} className="px-4 py-2 text-right font-mono text-ink-100">
+                    {c === 'eps' ? fmtNum(r[c] as number) : fmtCompact(r[c] as number)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ScorePill({ label, value }: { label: string; value: number }) {
+  const tone = value >= 65 ? 'text-bull' : value <= 40 ? 'text-bear' : 'text-accent-400';
+  return (
+    <div className="text-center rounded-lg bg-white/[0.03] py-2">
+      <div className="text-xs text-ink-500">{label}</div>
+      <div className={`text-sm font-mono font-semibold ${tone}`}>{value}</div>
+    </div>
+  );
+}
+
+function ScenarioCard({ label, forecast: fc, tone, price, highlight }: {
+  label: string;
+  forecast: { targetPrice: number; expectedReturnPct: number; confidence: number };
+  tone: 'bull' | 'bear' | 'neutral';
+  price: number;
+  highlight?: boolean;
+}) {
+  const color = tone === 'bull' ? 'text-bull' : tone === 'bear' ? 'text-bear' : 'text-ink-100';
+  const bg = highlight ? 'border-brand-500/40 bg-brand-500/[0.04]' : 'border-white/5';
+  return (
+    <div className={`rounded-xl border ${bg} p-4`}>
+      <div className="text-xs text-ink-500">{label}</div>
+      <div className={`text-2xl font-bold font-mono mt-1 ${color}`}>{fmtNum(fc.targetPrice)}</div>
+      <div className={`text-sm font-mono ${fc.expectedReturnPct >= 0 ? 'text-bull' : 'text-bear'}`}>
+        {fc.expectedReturnPct >= 0 ? '+' : ''}{fc.expectedReturnPct}%
+      </div>
+      <div className="text-xs text-ink-500 mt-2">vs current {fmtNum(price)}</div>
+      <div className="mt-2">
+        <div className="text-[10px] text-ink-600 mb-0.5">Confidence {fc.confidence}%</div>
+        <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+          <div className="h-full rounded-full bg-brand-500/60" style={{ width: `${fc.confidence}%` }} />
         </div>
       </div>
     </div>
   );
 }
 
-export default StockDetail;
+function PriceTargetBar({ current, targets }: { current: number; targets: { label: string; value: number }[] }) {
+  const values = [current, ...targets.map((t) => t.value)];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pct = (v: number) => ((v - min) / range) * 100;
+  return (
+    <div>
+      <div className="relative h-12">
+        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-gradient-to-r from-bear via-accent-400 to-bull" />
+        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 text-center" style={{ left: `${pct(current)}%` }}>
+          <div className="w-0.5 h-8 bg-ink-100 mx-auto" />
+          <div className="text-[10px] text-ink-200 mt-1 whitespace-nowrap">Now {fmtNum(current)}</div>
+        </div>
+        {targets.map((t) => (
+          <div key={t.label} className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 text-center" style={{ left: `${pct(t.value)}%` }}>
+            <div className="w-0.5 h-6 bg-ink-400 mx-auto" />
+            <div className="text-[10px] text-ink-400 mt-1 whitespace-nowrap">{t.label}<br />{fmtNum(t.value)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CondCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
+  return (
+    <div className="card p-4">
+      <div className="flex items-center gap-2 text-xs text-ink-500">{icon} {label}</div>
+      <div className="text-lg font-semibold text-ink-100 mt-1">{value}</div>
+    </div>
+  );
+}
