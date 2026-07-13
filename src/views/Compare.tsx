@@ -1,232 +1,124 @@
-import { useState, useMemo } from 'react';
-import { Search, X, Plus, TrendingUp, TrendingDown } from 'lucide-react';
-import { STOCK_UNIVERSE, getMeta } from '../lib/universe';
-import { getLiveQuote, getFundamentals } from '../lib/dataService';
-import { useLiveQuotes } from '../lib/hooks';
-import { useCurrency } from '../lib/currency';
-import { fmtPctRaw, fmtNum } from '../lib/format';
-import type { Quote, Fundamentals, StockMeta } from '../lib/types';
+import { useMemo, useState } from 'react';
+import { Plus, X, GitCompare } from 'lucide-react';
+import { STOCK_UNIVERSE } from '../lib/universe';
+import { getFundamentals, searchStocks, getCandles } from '../lib/dataService';
+import { getLiveQuote, useLiveQuotes } from '../lib/liveFeed';
+import { analyzeTechnicals } from '../lib/indicators';
+import { fmtNum, fmtPct, fmtPctRaw, fmtCompact } from '../lib/format';
+import type { StockMeta } from '../lib/types';
 
-interface Props {
-  onOpenStock: (s: string) => void;
-}
-
-interface CompareCol {
-  meta: StockMeta;
-  quote: Quote;
-  fund: Fundamentals | null;
-}
-
-const METRICS: { key: string; label: string; render: (c: CompareCol, fmt: { formatPrice: (n: number, from?: string) => string; formatCompact: (n: number, from?: string) => string }) => React.ReactNode }[] = [
-  { key: 'price', label: 'Price', render: (c, fmt) => fmt.formatPrice(c.quote.price, c.meta.currency) },
-  { key: 'changePct', label: 'Change %', render: (c) => {
-    const up = c.quote.changePct >= 0;
-    return <span className={up ? 'text-bull font-medium' : 'text-bear font-medium'}>{up ? '+' : ''}{fmtPctRaw(c.quote.changePct)}</span>;
-  }},
-  { key: 'marketCap', label: 'Market Cap', render: (c, fmt) => fmt.formatCompact(c.quote.marketCap, c.meta.currency) },
-  { key: 'pe', label: 'P/E', render: (c) => c.quote.pe > 0 ? c.quote.pe.toFixed(1) : '—' },
-  { key: 'eps', label: 'EPS', render: (c) => c.quote.eps > 0 ? fmtNum(c.quote.eps) : '—' },
-  { key: 'beta', label: 'Beta', render: (c) => c.quote.beta.toFixed(2) },
-  { key: 'divYield', label: 'Div Yield', render: (c) => c.quote.dividendYield > 0 ? (c.quote.dividendYield * 100).toFixed(2) + '%' : '—' },
-  { key: 'roe', label: 'ROE', render: (c) => c.fund ? (c.fund.roe * 100).toFixed(1) + '%' : '—' },
-  { key: 'revGrowth', label: 'Rev Growth', render: (c) => c.fund ? (c.fund.revenueGrowth * 100).toFixed(1) + '%' : '—' },
-  { key: 'de', label: 'Debt/Equity', render: (c) => c.fund ? c.fund.debtToEquity.toFixed(2) : '—' },
-  { key: 'netMargin', label: 'Net Margin', render: (c) => c.fund ? (c.fund.netMargin * 100).toFixed(1) + '%' : '—' },
-  { key: 'sector', label: 'Sector', render: (c) => c.meta.sector },
-  { key: 'region', label: 'Region', render: (c) => c.meta.region },
-];
+interface Props { onOpenStock: (s: string) => void; }
 
 export function Compare({ onOpenStock }: Props) {
   useLiveQuotes();
-  const { formatPrice, formatCompact } = useCurrency();
-  const [symbols, setSymbols] = useState<string[]>([]);
-  const [search, setSearch] = useState('');
-  const [showResults, setShowResults] = useState(false);
+  const [selected, setSelected] = useState<string[]>(['AAPL', 'MSFT', 'NVDA']);
+  const [picker, setPicker] = useState('');
+  const [results, setResults] = useState<StockMeta[]>([]);
 
-  const cols = useMemo<CompareCol[]>(() => {
-    return symbols
-      .map((sym) => {
-        const meta = getMeta(sym);
-        const quote = getLiveQuote(sym);
-        if (!meta || !quote) return null;
-        const fund = getFundamentals(sym);
-        return { meta, quote, fund };
-      })
-      .filter((c): c is CompareCol => c !== null);
-  }, [symbols]);
+  const rows = useMemo(() =>
+    selected.map((sym) => {
+      const meta = STOCK_UNIVERSE.find((s) => s.symbol === sym);
+      const q = getLiveQuote(sym);
+      const f = getFundamentals(sym);
+      const tech = q ? analyzeTechnicals(getCandles(sym, '1Y')) : null;
+      return { meta, q, f, tech };
+    }).filter((r) => r.meta && r.q),
+  [selected]);
 
-  const searchResults = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return [];
-    return STOCK_UNIVERSE.filter((s) =>
-      s.symbol.toLowerCase().includes(term) || s.name.toLowerCase().includes(term)
-    ).slice(0, 8);
-  }, [search]);
-
-  const addStock = (sym: string) => {
-    if (symbols.length >= 4) return;
-    if (symbols.includes(sym)) return;
-    setSymbols((prev) => [...prev, sym]);
-    setSearch('');
-    setShowResults(false);
+  const add = (sym: string) => {
+    if (!selected.includes(sym) && selected.length < 5) setSelected((s) => [...s, sym]);
+    setPicker(''); setResults([]);
   };
 
-  const removeStock = (sym: string) => {
-    setSymbols((prev) => prev.filter((s) => s !== sym));
-  };
-
-  const fmt = { formatPrice, formatCompact };
+  const metrics: { key: string; label: string; get: (r: typeof rows[0]) => string; tone?: (r: typeof rows[0]) => string }[] = [
+    { key: 'price', label: 'Price', get: (r) => fmtNum(r.q!.price) },
+    { key: 'chg', label: 'Day change %', get: (r) => `${r.q!.changePct >= 0 ? '+' : ''}${fmtPctRaw(r.q!.changePct)}`, tone: (r) => r.q!.changePct >= 0 ? 'text-bull' : 'text-bear' },
+    { key: 'mcap', label: 'Market cap', get: (r) => `$${fmtCompact(r.q!.marketCap)}` },
+    { key: 'pe', label: 'P/E', get: (r) => fmtNum(r.q!.pe) },
+    { key: 'fwdpe', label: 'Fwd P/E', get: (r) => fmtNum(r.f!.forwardPe) },
+    { key: 'peg', label: 'PEG', get: (r) => fmtNum(r.f!.peg) },
+    { key: 'pb', label: 'P/B', get: (r) => fmtNum(r.f!.pb) },
+    { key: 'roe', label: 'ROE', get: (r) => fmtPct(r.f!.roe) },
+    { key: 'netmargin', label: 'Net margin', get: (r) => fmtPct(r.f!.netMargin) },
+    { key: 'de', label: 'Debt/equity', get: (r) => fmtNum(r.f!.debtToEquity) },
+    { key: 'revgrowth', label: 'Rev growth', get: (r) => fmtPct(r.f!.revenueGrowth), tone: (r) => r.f!.revenueGrowth >= 0 ? 'text-bull' : 'text-bear' },
+    { key: 'div', label: 'Div yield', get: (r) => fmtPct(r.f!.dividendYield) },
+    { key: 'beta', label: 'Beta', get: (r) => fmtNum(r.f!.beta) },
+    { key: 'rsi', label: 'RSI', get: (r) => fmtNum(r.tech!.rsi) },
+    { key: 'verdict', label: 'Tech verdict', get: (r) => r.tech!.verdict, tone: (r) => r.tech!.verdict.includes('Buy') ? 'text-bull' : r.tech!.verdict.includes('Sell') ? 'text-bear' : 'text-ink-300' },
+  ];
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
+    <div className="space-y-4 animate-fade-in">
       <div>
-        <h2 className="text-xl font-bold text-ink-900">Compare Stocks</h2>
-        <p className="text-sm text-ink-500">
-          Add 2–4 stocks to compare side-by-side. {symbols.length}/4 selected.
-        </p>
+        <h1 className="text-2xl font-bold text-ink-50">Compare</h1>
+        <p className="text-ink-400 text-sm">Side-by-side metrics for up to 5 stocks.</p>
       </div>
 
-      {/* Search / Add */}
       <div className="card p-4">
-        <div className="relative">
-          <div className="flex items-center gap-2">
-            <Search className="w-4 h-4 text-ink-400" />
-            <input
-              className="input flex-1"
-              placeholder="Search to add a stock to compare..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setShowResults(true); }}
-              onFocus={() => setShowResults(true)}
-            />
-            {symbols.length < 4 && search && (
-              <button className="btn-primary text-sm flex items-center gap-1" onClick={() => {
-                const exact = STOCK_UNIVERSE.find((s) => s.symbol.toLowerCase() === search.trim().toLowerCase());
-                if (exact) addStock(exact.symbol);
-              }}>
-                <Plus className="w-4 h-4" /> Add
-              </button>
-            )}
-          </div>
-          {showResults && searchResults.length > 0 && (
-            <div className="absolute z-10 mt-1 w-full card p-1 max-h-72 overflow-auto shadow-lg">
-              {searchResults.map((s) => (
-                <button
-                  key={s.symbol}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-ink-50 text-left"
-                  onClick={() => addStock(s.symbol)}
-                  disabled={symbols.includes(s.symbol)}
-                >
-                  <div>
-                    <span className="font-semibold text-ink-900 text-sm">{s.symbol}</span>
-                    <span className="ml-2 text-sm text-ink-500">{s.name}</span>
-                  </div>
-                  <span className="text-xs text-ink-400">{s.region}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {showResults && search && searchResults.length === 0 && (
-            <div className="absolute z-10 mt-1 w-full card p-3 text-sm text-ink-400 shadow-lg">
-              No stocks found matching "{search}"
+        <div className="flex items-center gap-2 flex-wrap">
+          <GitCompare size={16} className="text-ink-400" />
+          {selected.map((s) => (
+            <span key={s} className="chip bg-white/5 text-ink-200">
+              {s}
+              <button onClick={() => setSelected((p) => p.filter((x) => x !== s))} className="ml-1 text-ink-500 hover:text-bear"><X size={12} /></button>
+            </span>
+          ))}
+          {selected.length < 5 && (
+            <div className="relative">
+              <input
+                value={picker}
+                onChange={(e) => { setPicker(e.target.value); setResults(searchStocks(e.target.value).slice(0, 6)); }}
+                placeholder="Add stock…"
+                className="input py-1.5 text-sm w-40"
+              />
+              {results.length > 0 && picker && (
+                <div className="absolute z-10 mt-1 w-56 card max-h-60 overflow-y-auto">
+                  {results.map((r) => (
+                    <button key={r.symbol} onClick={() => add(r.symbol)} className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 text-sm">
+                      <Plus size={12} className="text-brand-400" />
+                      <span className="font-semibold text-ink-100">{r.symbol}</span>
+                      <span className="text-ink-500 text-xs truncate">{r.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Selected chips */}
-      {symbols.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {symbols.map((sym) => {
-            const meta = getMeta(sym);
-            return (
-              <span key={sym} className="chip flex items-center gap-1.5 pr-1">
-                <span className="font-semibold">{sym}</span>
-                <span className="text-ink-400 text-xs">{meta?.region}</span>
-                <button onClick={() => removeStock(sym)} className="ml-1 hover:text-bear">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </span>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Comparison table */}
-      {cols.length >= 2 ? (
+      {rows.length > 0 && (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-ink-200 bg-ink-50">
-                  <th className="text-left px-3 py-3 font-medium text-ink-600 text-xs uppercase tracking-wide w-40">Metric</th>
-                  {cols.map((c) => (
-                    <th key={c.meta.symbol} className="text-left px-3 py-3 min-w-[160px]">
-                      <button
-                        className="text-left group"
-                        onClick={() => onOpenStock(c.meta.symbol)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-ink-900 group-hover:text-brand-500">{c.meta.symbol}</span>
-                          <X
-                            className="w-3.5 h-3.5 text-ink-300 hover:text-bear cursor-pointer"
-                            onClick={(e) => { e.stopPropagation(); removeStock(c.meta.symbol); }}
-                          />
-                        </div>
-                        <div className="text-xs text-ink-500 truncate max-w-[140px]">{c.meta.name}</div>
+                <tr className="border-b border-white/5">
+                  <th className="text-left px-4 py-3 text-xs text-ink-500 font-medium">Metric</th>
+                  {rows.map((r) => (
+                    <th key={r.meta!.symbol} className="text-left px-4 py-3">
+                      <button onClick={() => onOpenStock(r.meta!.symbol)} className="text-left">
+                        <div className="font-bold text-ink-100">{r.meta!.symbol}</div>
+                        <div className="text-xs text-ink-500 truncate max-w-[140px]">{r.meta!.name}</div>
                       </button>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {METRICS.map((m) => {
-                  // Find best value for highlighting (numeric metrics only)
-                  const numericKeys = ['price', 'changePct', 'marketCap', 'pe', 'eps', 'roe', 'revGrowth', 'netMargin'];
-                  let bestIdx = -1;
-                  if (numericKeys.includes(m.key) && cols.length >= 2) {
-                    const vals = cols.map((c) => {
-                      switch (m.key) {
-                        case 'price': return c.quote.price;
-                        case 'changePct': return c.quote.changePct;
-                        case 'marketCap': return c.quote.marketCap;
-                        case 'pe': return c.quote.pe;
-                        case 'eps': return c.quote.eps;
-                        case 'roe': return c.fund?.roe ?? -Infinity;
-                        case 'revGrowth': return c.fund?.revenueGrowth ?? -Infinity;
-                        case 'netMargin': return c.fund?.netMargin ?? -Infinity;
-                        default: return -Infinity;
-                      }
-                    });
-                    // For P/E, lower is better; for others, higher is better
-                    if (m.key === 'pe') {
-                      bestIdx = vals.indexOf(Math.min(...vals.filter((v) => v > 0)));
-                    } else {
-                      bestIdx = vals.indexOf(Math.max(...vals));
-                    }
-                  }
-                  return (
-                    <tr key={m.key} className="border-b border-ink-100 hover:bg-ink-50/50">
-                      <td className="px-3 py-2.5 font-medium text-ink-600 text-xs uppercase tracking-wide">{m.label}</td>
-                      {cols.map((c, idx) => (
-                        <td
-                          key={c.meta.symbol}
-                          className={`px-3 py-2.5 tabular-nums ${idx === bestIdx ? 'text-bull font-semibold' : 'text-ink-700'}`}
-                        >
-                          {m.render(c, fmt)}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
+                {metrics.map((m) => (
+                  <tr key={m.key} className="border-t border-white/[0.03]">
+                    <td className="px-4 py-2.5 text-ink-400 text-xs">{m.label}</td>
+                    {rows.map((r) => (
+                      <td key={r.meta!.symbol} className={`px-4 py-2.5 font-mono ${m.tone ? m.tone(r) : 'text-ink-100'}`}>
+                        {m.get(r)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-        </div>
-      ) : (
-        <div className="card p-12 text-center">
-          <p className="text-ink-400 text-lg mb-2">No stocks to compare yet</p>
-          <p className="text-ink-500 text-sm">Add at least 2 stocks using the search above to see a side-by-side comparison.</p>
         </div>
       )}
     </div>

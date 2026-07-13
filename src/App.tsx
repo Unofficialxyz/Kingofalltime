@@ -9,7 +9,8 @@ import { Watchlist } from './views/Watchlist';
 import { Portfolio } from './views/Portfolio';
 import { Heatmap } from './views/Heatmap';
 import { MarketNews } from './views/MarketNews';
-import { useWatchlist, usePortfolio, useLiveQuotes } from './lib/hooks';
+import { useWatchlist, usePortfolio } from './lib/hooks';
+import { useLiveQuotes } from './lib/liveFeed';
 import { CurrencyProvider, useCurrency, CURRENCIES } from './lib/currency';
 
 type View = 'dashboard' | 'screener' | 'compare' | 'watchlist' | 'portfolio' | 'stock' | 'heatmap' | 'news';
@@ -20,7 +21,10 @@ function CurrencySelector() {
   const info = CURRENCIES.find((c) => c.code === display)!;
   return (
     <div className="relative">
-      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 text-ink-200 hover:bg-white/5 transition text-sm">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10 text-ink-200 hover:bg-white/5 transition text-sm"
+      >
         <DollarSign size={14} />
         <span className="font-mono text-xs">{info.symbol}</span>
         <span className="text-xs text-ink-400 hidden sm:inline">{display}</span>
@@ -30,7 +34,11 @@ function CurrencySelector() {
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 mt-1 w-48 card max-h-72 overflow-y-auto z-50">
             {CURRENCIES.map((c) => (
-              <button key={c.code} onClick={() => { setDisplay(c.code); setOpen(false); }} className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 text-sm ${c.code === display ? 'text-brand-300' : 'text-ink-200'}`}>
+              <button
+                key={c.code}
+                onClick={() => { setDisplay(c.code); setOpen(false); }}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 text-sm ${c.code === display ? 'text-brand-300' : 'text-ink-200'}`}
+              >
                 <span className="text-base">{c.flag}</span>
                 <span className="font-mono text-xs">{c.symbol}</span>
                 <span className="text-xs text-ink-400">{c.code}</span>
@@ -93,44 +101,87 @@ function AppInner() {
               </span>
             )}
           </button>
+
           <nav className="hidden lg:flex items-center gap-1 ml-4">
             {nav.map((n) => (
-              <button key={n.id} onClick={() => { setView(n.id); setSymbol(null); }} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition ${view === n.id ? 'bg-white/10 text-ink-100' : 'text-ink-400 hover:text-ink-200 hover:bg-white/5'}`}>{n.icon} {n.label}</button>
+              <button
+                key={n.id}
+                onClick={() => { setView(n.id); setSymbol(null); }}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition ${view === n.id ? 'bg-white/10 text-ink-100' : 'text-ink-400 hover:text-ink-200 hover:bg-white/5'}`}
+              >
+                {n.icon} {n.label}
+              </button>
             ))}
           </nav>
+
           <div className="ml-auto flex items-center gap-2">
             <CurrencySelector />
-            <button onClick={() => setSearchOpen(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10 text-ink-400 hover:text-ink-200 hover:border-white/20 transition text-sm w-32 sm:w-48">
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10 text-ink-400 hover:text-ink-200 hover:border-white/20 transition text-sm w-32 sm:w-48"
+            >
               <Search size={15} />
               <span className="text-ink-500 hidden sm:inline">Search…</span>
               <kbd className="ml-auto text-[10px] text-ink-600 border border-white/10 rounded px-1.5 py-0.5 hidden sm:block">⌘K</kbd>
             </button>
           </div>
         </div>
+
         <nav className="lg:hidden flex items-center gap-1 px-2 pb-2 overflow-x-auto no-scrollbar">
           {nav.map((n) => (
-            <button key={n.id} onClick={() => { setView(n.id); setSymbol(null); }} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap ${view === n.id ? 'bg-white/10 text-ink-100' : 'text-ink-400'}`}>{n.icon} {n.label}</button>
+            <button
+              key={n.id}
+              onClick={() => { setView(n.id); setSymbol(null); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap ${view === n.id ? 'bg-white/10 text-ink-100' : 'text-ink-400'}`}
+            >
+              {n.icon} {n.label}
+            </button>
           ))}
         </nav>
       </header>
+
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
         {view === 'dashboard' && <Dashboard onOpenStock={openStock} />}
         {view === 'screener' && <Screener onOpenStock={openStock} />}
         {view === 'heatmap' && <Heatmap onOpenStock={openStock} />}
         {view === 'compare' && <Compare onOpenStock={openStock} />}
-        {view === 'watchlist' && <Watchlist items={watch.items} onOpenStock={openStock} onRemove={watch.remove} loading={watch.loading} />}
-        {view === 'portfolio' && <Portfolio items={portfolio.items} onRemove={portfolio.remove} onAdd={portfolio.add} loading={portfolio.loading} pendingSymbol={pendingHolding} clearPending={() => setPendingHolding(null)} />}
+        {view === 'watchlist' && (
+          <Watchlist items={watch.items} onOpenStock={openStock} onRemove={watch.remove} loading={watch.loading} />
+        )}
+        {view === 'portfolio' && (
+          <Portfolio
+            items={portfolio.items}
+            onRemove={portfolio.remove}
+            onAdd={portfolio.add}
+            loading={portfolio.loading}
+            pendingSymbol={pendingHolding}
+            clearPending={() => setPendingHolding(null)}
+          />
+        )}
         {view === 'news' && <MarketNews onOpenStock={openStock} />}
         {view === 'stock' && symbol && (
-          <StockDetail symbol={symbol} onBack={goDashboard} onOpenStock={openStock} watched={watch.has(symbol)} onToggleWatch={(s) => (watch.has(s) ? watch.remove(s) : watch.add(s))} onAddHolding={(s) => { setPendingHolding(s); setView('portfolio'); }} />
+          <StockDetail
+            symbol={symbol}
+            onBack={goDashboard}
+            onOpenStock={openStock}
+            watched={watch.has(symbol)}
+            onToggleWatch={(s) => (watch.has(s) ? watch.remove(s) : watch.add(s))}
+            onAddHolding={(s) => { setPendingHolding(s); setView('portfolio'); }}
+          />
         )}
       </main>
+
       <footer className="border-t border-white/5 mt-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-ink-500">
-          <div className="flex items-center gap-2"><Globe2 size={14} /> GlobalStock Analyser — 30,000+ stocks worldwide</div>
-          <div className="flex items-center gap-4"><span>AI-powered analysis · Live prices · INR default currency</span></div>
+          <div className="flex items-center gap-2">
+            <Globe2 size={14} /> GlobalStock Analyser — 30,000+ stocks worldwide
+          </div>
+          <div className="flex items-center gap-4">
+            <span>AI-powered analysis · Live prices · INR default currency</span>
+          </div>
         </div>
       </footer>
+
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onSelect={openStock} />
     </div>
   );

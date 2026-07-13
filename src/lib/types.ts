@@ -47,7 +47,7 @@ export interface Quote {
 }
 
 export interface Candle {
-  t: number;
+  t: number; // epoch ms
   o: number;
   h: number;
   l: number;
@@ -83,8 +83,34 @@ export interface Fundamentals {
   beta: number;
 }
 
-export interface IncomeStatement { period: string; revenue: number; grossProfit: number; operatingIncome: number; netIncome: number; ebitda: number; eps: number; }
-export interface BalanceSheet { period: string; totalAssets: number; totalLiabilities: number; equity: number; cash: number; debt: number; inventory: number; receivables: number; }
-export interface CashFlow { period: string; operatingCf: number; capex: number; freeCf: number; dividends: number; netDebtIssuance: number; }
+export interface IncomeStatement {
+  period: string;
+  revenue: number;
+  grossProfit: number;
+  operatingIncome: number;
+  netIncome: number;
+  ebitda: number;
+  eps: number;
+}
+
+export interface BalanceSheet {
+  period: string;
+  totalAssets: number;
+  totalLiabilities: number;
+  equity: number;
+  cash: number;
+  debt: number;
+  inventory: number;
+  receivables: number;
+}
+
+export interface CashFlow {
+  period: string;
+  operatingCf: number;
+  capex: number;
+  freeCf: number;
+  dividends: number;
+  netDebtIssuance: number;
+}
 
 export type Timeframe = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX';

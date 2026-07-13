@@ -32,6 +32,7 @@ export const CURRENCIES: CurrencyInfo[] = [
 const MAP = new Map(CURRENCIES.map((c) => [c.code, c]));
 export function getCurrencyInfo(code: string): CurrencyInfo { return MAP.get(code as CurrencyCode) ?? CURRENCIES[0]; }
 
+// Exchange rates: 1 unit of currency = X INR
 export const INR_RATES: Record<CurrencyCode, number> = {
   INR: 1, USD: 83.5, EUR: 90.2, GBP: 105.8, JPY: 0.54, CNY: 11.5, HKD: 10.7,
   KRW: 0.061, AUD: 55.2, CAD: 61.0, CHF: 93.5, SEK: 7.8, BRL: 16.5, SAR: 22.3,
