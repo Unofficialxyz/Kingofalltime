@@ -1,126 +1,253 @@
-import { useMemo, useState } from 'react';
-import { Plus, X, GitCompare } from 'lucide-react';
-import { STOCK_UNIVERSE } from '../lib/universe';
-import { getFundamentals, searchStocks, getCandles } from '../lib/dataService';
-import { getLiveQuote, useLiveQuotes } from '../lib/liveFeed';
-import { analyzeTechnicals } from '../lib/indicators';
-import { fmtNum, fmtPct, fmtPctRaw, fmtCompact } from '../lib/format';
-import type { StockMeta } from '../lib/types';
+import { useMemo, useState } from "react";
+import { Search, X, Plus, GitCompare } from "lucide-react";
+import { searchStocks, getMeta } from "../lib/universe";
+import { getLiveQuote, getFundamentals } from "../lib/dataService";
+import { useCurrency } from "../lib/currency";
+import { fmtPctRaw, fmtNum } from "../lib/format";
+import type { Quote, Fundamentals, StockMeta } from "../lib/types";
 
-interface Props { onOpenStock: (s: string) => void; }
+interface CompareProps {
+  onOpenStock: (s: string) => void;
+}
 
-export function Compare({ onOpenStock }: Props) {
-  useLiveQuotes();
-  const [selected, setSelected] = useState<string[]>(['AAPL', 'MSFT', 'NVDA']);
-  const [picker, setPicker] = useState('');
-  const [results, setResults] = useState<StockMeta[]>([]);
+const MAX_COMPARE = 4;
 
-  const rows = useMemo(() =>
-    selected.map((sym) => {
-      const meta = STOCK_UNIVERSE.find((s) => s.symbol === sym);
-      const q = getLiveQuote(sym);
-      const f = getFundamentals(sym);
-      const tech = q ? analyzeTechnicals(getCandles(sym, '1Y')) : null;
-      return { meta, q, f, tech };
-    }).filter((r) => r.meta && r.q),
-  [selected]);
+type MetricRow = {
+  label: string;
+  extract: (q: Quote | null, f: Fundamentals | null, meta: StockMeta | undefined) => string;
+  highlight?: (q: Quote | null, f: Fundamentals | null) => "bull" | "bear" | "none";
+};
 
-  const add = (sym: string) => {
-    if (!selected.includes(sym) && selected.length < 5) setSelected((s) => [...s, sym]);
-    setPicker(''); setResults([]);
-  };
+const METRICS: MetricRow[] = [
+  {
+    label: "Price",
+    extract: (q, _f, meta) => (q ? formatPriceStatic(q.price, meta?.currency) : "—"),
+  },
+  {
+    label: "Change %",
+    extract: (q) => (q ? `${q.changePct >= 0 ? "+" : ""}${fmtPctRaw(q.changePct)}` : "—"),
+    highlight: (q) => (!q ? "none" : q.changePct >= 0 ? "bull" : "bear"),
+  },
+  {
+    label: "Market Cap",
+    extract: (q, _f, meta) => (q ? formatCompactStatic(q.marketCap, meta?.currency) : "—"),
+  },
+  {
+    label: "P/E Ratio",
+    extract: (q) => (q && q.pe > 0 ? fmtNum(q.pe, 1) : "—"),
+  },
+  {
+    label: "EPS",
+    extract: (q) => (q ? fmtNum(q.eps, 2) : "—"),
+  },
+  {
+    label: "Beta",
+    extract: (q) => (q ? fmtNum(q.beta, 2) : "—"),
+  },
+  {
+    label: "Dividend Yield",
+    extract: (q) => (q && q.dividendYield > 0 ? `${fmtNum(q.dividendYield, 2)}%` : "—"),
+  },
+  {
+    label: "ROE",
+    extract: (_q, f) => (f ? `${fmtNum(f.roe, 1)}%` : "—"),
+    highlight: (_q, f) => (!f ? "none" : f.roe >= 15 ? "bull" : f.roe < 5 ? "bear" : "none"),
+  },
+  {
+    label: "Revenue Growth",
+    extract: (_q, f) => (f ? `${fmtNum(f.revenueGrowth, 1)}%` : "—"),
+    highlight: (_q, f) => (!f ? "none" : f.revenueGrowth >= 10 ? "bull" : f.revenueGrowth < 0 ? "bear" : "none"),
+  },
+  {
+    label: "Debt / Equity",
+    extract: (_q, f) => (f ? fmtNum(f.debtToEquity, 2) : "—"),
+    highlight: (_q, f) => (!f ? "none" : f.debtToEquity > 2 ? "bear" : f.debtToEquity < 0.5 ? "bull" : "none"),
+  },
+  {
+    label: "Net Margin",
+    extract: (_q, f) => (f ? `${fmtNum(f.netMargin, 1)}%` : "—"),
+    highlight: (_q, f) => (!f ? "none" : f.netMargin >= 15 ? "bull" : f.netMargin < 5 ? "bear" : "none"),
+  },
+  {
+    label: "Sector",
+    extract: (_q, _f, meta) => meta?.sector ?? "—",
+  },
+  {
+    label: "Region",
+    extract: (_q, _f, meta) => meta?.region ?? "—",
+  },
+];
 
-  const metrics: { key: string; label: string; get: (r: typeof rows[0]) => string; tone?: (r: typeof rows[0]) => string }[] = [
-    { key: 'price', label: 'Price', get: (r) => fmtNum(r.q!.price) },
-    { key: 'chg', label: 'Day change %', get: (r) => `${r.q!.changePct >= 0 ? '+' : ''}${fmtPctRaw(r.q!.changePct)}`, tone: (r) => r.q!.changePct >= 0 ? 'text-bull' : 'text-bear' },
-    { key: 'mcap', label: 'Market cap', get: (r) => `$${fmtCompact(r.q!.marketCap)}` },
-    { key: 'pe', label: 'P/E', get: (r) => fmtNum(r.q!.pe) },
-    { key: 'fwdpe', label: 'Fwd P/E', get: (r) => fmtNum(r.f!.forwardPe) },
-    { key: 'peg', label: 'PEG', get: (r) => fmtNum(r.f!.peg) },
-    { key: 'pb', label: 'P/B', get: (r) => fmtNum(r.f!.pb) },
-    { key: 'roe', label: 'ROE', get: (r) => fmtPct(r.f!.roe) },
-    { key: 'netmargin', label: 'Net margin', get: (r) => fmtPct(r.f!.netMargin) },
-    { key: 'de', label: 'Debt/equity', get: (r) => fmtNum(r.f!.debtToEquity) },
-    { key: 'revgrowth', label: 'Rev growth', get: (r) => fmtPct(r.f!.revenueGrowth), tone: (r) => r.f!.revenueGrowth >= 0 ? 'text-bull' : 'text-bear' },
-    { key: 'div', label: 'Div yield', get: (r) => fmtPct(r.f!.dividendYield) },
-    { key: 'beta', label: 'Beta', get: (r) => fmtNum(r.f!.beta) },
-    { key: 'rsi', label: 'RSI', get: (r) => fmtNum(r.tech!.rsi) },
-    { key: 'verdict', label: 'Tech verdict', get: (r) => r.tech!.verdict, tone: (r) => r.tech!.verdict.includes('Buy') ? 'text-bull' : r.tech!.verdict.includes('Sell') ? 'text-bear' : 'text-ink-300' },
-  ];
+// Static helpers (no hook needed)
+function formatPriceStatic(value: number, currency?: string): string {
+  if (currency === "INR") return "₹" + value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  if (currency === "JPY") return "¥" + value.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+  if (currency === "GBP") return "£" + value.toLocaleString("en-GB", { maximumFractionDigits: 2 });
+  if (currency === "EUR") return "€" + value.toLocaleString("de-DE", { maximumFractionDigits: 2 });
+  return "$" + value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+function formatCompactStatic(value: number, currency?: string): string {
+  const abs = Math.abs(value);
+  let str: string;
+  if (abs >= 1e12) str = (value / 1e12).toFixed(2) + "T";
+  else if (abs >= 1e9) str = (value / 1e9).toFixed(2) + "B";
+  else if (abs >= 1e6) str = (value / 1e6).toFixed(2) + "M";
+  else if (abs >= 1e3) str = (value / 1e3).toFixed(1) + "K";
+  else str = value.toFixed(0);
+  const sym = currency === "INR" ? "₹" : currency === "JPY" ? "¥" : currency === "GBP" ? "£" : currency === "EUR" ? "€" : "$";
+  return sym + str;
+}
+
+export function Compare({ onOpenStock }: CompareProps) {
+  const { formatPrice, formatCompact } = useCurrency();
+  const [symbols, setSymbols] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
+  const [showResults, setShowResults] = useState(false);
+
+  const searchResults = useMemo(() => {
+    if (!query.trim()) return [];
+    return searchStocks(query, 10).filter((s) => !symbols.includes(s.symbol));
+  }, [query, symbols]);
+
+  function addSymbol(sym: string) {
+    if (symbols.length >= MAX_COMPARE) return;
+    if (symbols.includes(sym)) return;
+    if (!getMeta(sym)) return;
+    setSymbols((prev) => [...prev, sym]);
+    setQuery("");
+    setShowResults(false);
+  }
+
+  function removeSymbol(sym: string) {
+    setSymbols((prev) => prev.filter((s) => s !== sym));
+  }
+
+  // Gather data for each symbol
+  const compareData = useMemo(() => {
+    return symbols.map((sym) => {
+      const meta = getMeta(sym);
+      const quote = getLiveQuote(sym);
+      const fund = getFundamentals(sym);
+      return { symbol: sym, meta, quote, fund };
+    });
+  }, [symbols]);
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-ink-50">Compare</h1>
-        <p className="text-ink-400 text-sm">Side-by-side metrics for up to 5 stocks.</p>
+    <div className="p-4 sm:p-6 space-y-4 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <GitCompare size={18} className="text-brand-400" />
+        <h2 className="text-lg font-semibold text-ink-100">Compare Stocks</h2>
+        <span className="chip bg-ink-800 text-ink-400">{symbols.length}/{MAX_COMPARE}</span>
       </div>
 
+      {/* Search + add */}
       <div className="card p-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <GitCompare size={16} className="text-ink-400" />
-          {selected.map((s) => (
-            <span key={s} className="chip bg-white/5 text-ink-200">
-              {s}
-              <button onClick={() => setSelected((p) => p.filter((x) => x !== s))} className="ml-1 text-ink-500 hover:text-bear"><X size={12} /></button>
-            </span>
-          ))}
-          {selected.length < 5 && (
-            <div className="relative">
-              <input
-                value={picker}
-                onChange={(e) => { setPicker(e.target.value); setResults(searchStocks(e.target.value).slice(0, 6)); }}
-                placeholder="Add stock…"
-                className="input py-1.5 text-sm w-40"
-              />
-              {results.length > 0 && picker && (
-                <div className="absolute z-10 mt-1 w-56 card max-h-60 overflow-y-auto">
-                  {results.map((r) => (
-                    <button key={r.symbol} onClick={() => add(r.symbol)} className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5 text-sm">
-                      <Plus size={12} className="text-brand-400" />
-                      <span className="font-semibold text-ink-100">{r.symbol}</span>
-                      <span className="text-ink-500 text-xs truncate">{r.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+        <div className="relative max-w-md">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-500" />
+          <input
+            type="text"
+            placeholder="Search to add stocks to compare..."
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setShowResults(true); }}
+            onFocus={() => setShowResults(true)}
+            onBlur={() => setTimeout(() => setShowResults(false), 150)}
+            className="input pl-9"
+          />
+          {showResults && searchResults.length > 0 ? (
+            <div className="absolute top-full left-0 right-0 mt-1 card p-2 z-20 max-h-64 overflow-y-auto">
+              {searchResults.map((s) => (
+                <button
+                  key={s.symbol}
+                  onMouseDown={() => addSymbol(s.symbol)}
+                  className="w-full flex items-center gap-2 px-2 py-2 rounded hover:bg-white/5 text-left transition"
+                >
+                  <Plus size={14} className="text-brand-400 shrink-0" />
+                  <span className="font-semibold text-ink-100 text-sm">{s.symbol}</span>
+                  <span className="text-ink-500 text-sm truncate">{s.name}</span>
+                </button>
+              ))}
             </div>
-          )}
+          ) : null}
         </div>
+
+        {/* Selected chips */}
+        {symbols.length > 0 ? (
+          <div className="flex items-center gap-2 flex-wrap mt-3">
+            {symbols.map((sym) => {
+              const meta = getMeta(sym);
+              return (
+                <span key={sym} className="chip bg-ink-800 text-ink-200 flex items-center gap-1.5">
+                  <button
+                    onClick={() => removeSymbol(sym)}
+                    className="text-ink-500 hover:text-bear transition"
+                    aria-label={"Remove " + sym}
+                  >
+                    <X size={14} />
+                  </button>
+                  <span className="font-semibold">{sym}</span>
+                  <span className="text-ink-500 hidden sm:inline">{meta?.name}</span>
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
-      {rows.length > 0 && (
+      {/* Comparison table */}
+      {compareData.length >= 2 ? (
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/5">
-                  <th className="text-left px-4 py-3 text-xs text-ink-500 font-medium">Metric</th>
-                  {rows.map((r) => (
-                    <th key={r.meta!.symbol} className="text-left px-4 py-3">
-                      <button onClick={() => onOpenStock(r.meta!.symbol)} className="text-left">
-                        <div className="font-bold text-ink-100">{r.meta!.symbol}</div>
-                        <div className="text-xs text-ink-500 truncate max-w-[140px]">{r.meta!.name}</div>
+                <tr className="border-b border-white/5 bg-ink-900/50">
+                  <th className="text-left py-3 px-4 font-medium text-ink-400 w-40">Metric</th>
+                  {compareData.map((c) => (
+                    <th key={c.symbol} className="text-right py-3 px-4 font-medium">
+                      <button
+                        onClick={() => onOpenStock(c.symbol)}
+                        className="text-ink-100 hover:text-brand-400 transition font-semibold"
+                      >
+                        {c.symbol}
                       </button>
+                      <div className="text-xs text-ink-500 font-normal truncate max-w-[140px]">{c.meta?.name}</div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {metrics.map((m) => (
-                  <tr key={m.key} className="border-t border-white/[0.03]">
-                    <td className="px-4 py-2.5 text-ink-400 text-xs">{m.label}</td>
-                    {rows.map((r) => (
-                      <td key={r.meta!.symbol} className={`px-4 py-2.5 font-mono ${m.tone ? m.tone(r) : 'text-ink-100'}`}>
-                        {m.get(r)}
-                      </td>
-                    ))}
+                {METRICS.map((metric, idx) => (
+                  <tr key={metric.label} className={idx % 2 === 0 ? "bg-white/[0.02]" : ""}>
+                    <td className="py-3 px-4 text-ink-400 font-medium">{metric.label}</td>
+                    {compareData.map((c) => {
+                      const value = metric.extract(c.quote, c.fund, c.meta);
+                      const hl = metric.highlight ? metric.highlight(c.quote, c.fund) : "none";
+                      const colorClass = hl === "bull" ? "text-bull" : hl === "bear" ? "text-bear" : "text-ink-200";
+                      return (
+                        <td key={c.symbol} className={`py-3 px-4 text-right font-mono ${colorClass}`}>
+                          {value}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
+      ) : (
+        <div className="card p-12 text-center">
+          <GitCompare size={40} className="mx-auto text-ink-600 mb-3" />
+          <p className="text-ink-400">
+            {symbols.length === 0
+              ? "Search and add at least 2 stocks to start comparing."
+              : "Add one more stock to start comparing."}
+          </p>
+        </div>
       )}
     </div>
   );
 }
+
+export default Compare;

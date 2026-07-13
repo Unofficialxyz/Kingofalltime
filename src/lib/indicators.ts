@@ -1,308 +1,464 @@
-import type { Candle } from './types';
+import type { Candle, Fundamentals } from "./types";
 
-export function sma(values: number[], period: number): (number | null)[] {
-  const out: (number | null)[] = [];
+// ─── MOVING AVERAGES ─────────────────────────────────────────────────────────
+export function sma(values: number[], period: number): number[] {
+  const out: number[] = [];
   let sum = 0;
   for (let i = 0; i < values.length; i++) {
     sum += values[i];
     if (i >= period) sum -= values[i - period];
-    out.push(i >= period - 1 ? sum / period : null);
+    if (i >= period - 1) out.push(sum / period);
+    else out.push(NaN);
   }
   return out;
 }
 
-export function ema(values: number[], period: number): (number | null)[] {
-  const out: (number | null)[] = [];
+export function ema(values: number[], period: number): number[] {
+  const out: number[] = [];
   const k = 2 / (period + 1);
-  let prev: number | null = null;
+  let prev = values[0];
   for (let i = 0; i < values.length; i++) {
-    if (i < period - 1) { out.push(null); continue; }
-    if (prev === null) {
-      const seed = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
-      prev = seed; out.push(seed); continue;
+    if (i === 0) {
+      prev = values[0];
+    } else {
+      prev = values[i] * k + prev * (1 - k);
     }
-    prev = values[i] * k + prev * (1 - k);
     out.push(prev);
   }
   return out;
 }
 
-export function rsi(values: number[], period = 14): (number | null)[] {
-  const out: (number | null)[] = [];
-  let avgGain = 0, avgLoss = 0;
-  for (let i = 0; i < values.length; i++) {
-    if (i === 0) { out.push(null); continue; }
-    const change = values[i] - values[i - 1];
-    const gain = Math.max(0, change);
-    const loss = Math.max(0, -change);
-    if (i <= period) {
-      avgGain += gain; avgLoss += loss;
-      if (i === period) {
-        avgGain /= period; avgLoss /= period;
-        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-        out.push(100 - 100 / (1 + rs));
-      } else {
-        out.push(null);
-      }
-    } else {
-      avgGain = (avgGain * (period - 1) + gain) / period;
-      avgLoss = (avgLoss * (period - 1) + loss) / period;
-      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-      out.push(100 - 100 / (1 + rs));
-    }
+// ─── RSI ─────────────────────────────────────────────────────────────────────
+export function rsi(values: number[], period = 14): number[] {
+  const out: number[] = new Array(values.length).fill(NaN);
+  if (values.length <= period) return out;
+  let gains = 0;
+  let losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = values[i] - values[i - 1];
+    if (diff >= 0) gains += diff;
+    else losses -= diff;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  out[period] = 100 - 100 / (1 + (avgLoss === 0 ? 100 : avgGain / avgLoss));
+  for (let i = period + 1; i < values.length; i++) {
+    const diff = values[i] - values[i - 1];
+    const gain = diff >= 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
   }
   return out;
 }
 
-export function macd(values: number[], fast = 12, slow = 26, signal = 9) {
+// ─── MACD ────────────────────────────────────────────────────────────────────
+export interface MacdResult {
+  macd: number[];
+  signal: number[];
+  histogram: number[];
+}
+
+export function macd(values: number[], fast = 12, slow = 26, signalPeriod = 9): MacdResult {
   const emaFast = ema(values, fast);
   const emaSlow = ema(values, slow);
-  const macdLine = values.map((_, i) =>
-    emaFast[i] !== null && emaSlow[i] !== null
-      ? (emaFast[i] as number) - (emaSlow[i] as number)
-      : null,
-  );
-  const valid = macdLine.map((v) => (v === null ? 0 : v));
-  const signalLine = ema(valid, signal).map((v, i) => (macdLine[i] === null ? null : v));
-  const histogram = macdLine.map((v, i) =>
-    v !== null && signalLine[i] !== null ? v - (signalLine[i] as number) : null,
-  );
-  return { macdLine, signalLine, histogram };
+  const macdLine = values.map((_, i) => emaFast[i] - emaSlow[i]);
+  const signal = ema(macdLine, signalPeriod);
+  const histogram = macdLine.map((m, i) => m - signal[i]);
+  return { macd: macdLine, signal, histogram };
 }
 
-export function bollingerBands(values: number[], period = 20, mult = 2) {
+// ─── BOLLINGER BANDS ─────────────────────────────────────────────────────────
+export interface BollingerResult {
+  upper: number[];
+  middle: number[];
+  lower: number[];
+}
+
+export function bollinger(values: number[], period = 20, mult = 2): BollingerResult {
   const mid = sma(values, period);
-  const upper: (number | null)[] = [];
-  const lower: (number | null)[] = [];
-  for (let i = 0; i < values.length; i++) {
-    if (i < period - 1) { upper.push(null); lower.push(null); continue; }
-    const slice = values.slice(i - period + 1, i + 1);
-    const m = mid[i] as number;
-    const variance = slice.reduce((a, b) => a + (b - m) ** 2, 0) / period;
-    const sd = Math.sqrt(variance);
-    upper.push(m + mult * sd);
-    lower.push(m - mult * sd);
+  const upper: number[] = new Array(values.length).fill(NaN);
+  const lower: number[] = new Array(values.length).fill(NaN);
+  for (let i = period - 1; i < values.length; i++) {
+    let sumSq = 0;
+    for (let j = 0; j < period; j++) sumSq += Math.pow(values[i - j] - mid[i], 2);
+    const sd = Math.sqrt(sumSq / period);
+    upper[i] = mid[i] + mult * sd;
+    lower[i] = mid[i] - mult * sd;
   }
-  return { upper, mid, lower };
+  return { upper, middle: mid, lower };
 }
 
-export function atr(candles: Candle[], period = 14): (number | null)[] {
-  const trs: number[] = [];
-  for (let i = 0; i < candles.length; i++) {
-    if (i === 0) { trs.push(candles[i].h - candles[i].l); continue; }
+// ─── ATR ─────────────────────────────────────────────────────────────────────
+export function atr(candles: Candle[], period = 14): number[] {
+  const out: number[] = new Array(candles.length).fill(NaN);
+  if (candles.length < 2) return out;
+  const trs: number[] = [candles[0].h - candles[0].l];
+  for (let i = 1; i < candles.length; i++) {
     const c = candles[i];
-    const prevClose = candles[i - 1].c;
-    trs.push(Math.max(c.h - c.l, Math.abs(c.h - prevClose), Math.abs(c.l - prevClose)));
+    const prevC = candles[i - 1].c;
+    trs.push(Math.max(c.h - c.l, Math.abs(c.h - prevC), Math.abs(c.l - prevC)));
   }
-  return ema(trs, period);
+  let sum = 0;
+  for (let i = 0; i < Math.min(period, trs.length); i++) sum += trs[i];
+  let prev = sum / Math.min(period, trs.length);
+  out[Math.min(period, candles.length) - 1] = prev;
+  for (let i = period; i < candles.length; i++) {
+    prev = (prev * (period - 1) + trs[i]) / period;
+    out[i] = prev;
+  }
+  return out;
 }
 
-export function stochastic(candles: Candle[], period = 14) {
-  const k: (number | null)[] = [];
-  for (let i = 0; i < candles.length; i++) {
-    if (i < period - 1) { k.push(null); continue; }
-    const slice = candles.slice(i - period + 1, i + 1);
-    const hh = Math.max(...slice.map((c) => c.h));
-    const ll = Math.min(...slice.map((c) => c.l));
-    const denom = hh - ll || 1;
-    k.push(((candles[i].c - ll) / denom) * 100);
-  }
-  const validK = k.map((v) => (v === null ? 0 : v));
-  const d = sma(validK, 3).map((v, i) => (k[i] === null ? null : v));
-  return { k, d };
-}
-
-export function adx(candles: Candle[], period = 14): (number | null)[] {
-  const plusDM: number[] = [];
-  const minusDM: number[] = [];
-  const tr: number[] = [];
+// ─── ADX ─────────────────────────────────────────────────────────────────────
+export function adx(candles: Candle[], period = 14): number[] {
+  const out: number[] = new Array(candles.length).fill(NaN);
+  if (candles.length < period * 2) return out;
+  const plusDM: number[] = [0];
+  const minusDM: number[] = [0];
+  const trs: number[] = [candles[0].h - candles[0].l];
   for (let i = 1; i < candles.length; i++) {
     const up = candles[i].h - candles[i - 1].h;
     const down = candles[i - 1].l - candles[i].l;
     plusDM.push(up > down && up > 0 ? up : 0);
     minusDM.push(down > up && down > 0 ? down : 0);
-    tr.push(Math.max(
-      candles[i].h - candles[i].l,
-      Math.abs(candles[i].h - candles[i - 1].c),
-      Math.abs(candles[i].l - candles[i - 1].c),
-    ));
+    const c = candles[i];
+    const prevC = candles[i - 1].c;
+    trs.push(Math.max(c.h - c.l, Math.abs(c.h - prevC), Math.abs(c.l - prevC)));
   }
-  const atrArr = ema(tr, period);
-  const plusDi = ema(plusDM, period).map((v, i) => (v && atrArr[i] ? (v / atrArr[i]!) * 100 : null));
-  const minusDi = ema(minusDM, period).map((v, i) => (v && atrArr[i] ? (v / atrArr[i]!) * 100 : null));
-  const dx = plusDi.map((p, i) => {
-    const m = minusDi[i];
-    if (p === null || m === null) return null;
-    const sum = p + m || 1;
-    return Math.abs(p - m) / sum * 100;
-  });
-  const validDx = dx.map((v) => (v === null ? 0 : v));
-  return ema(validDx, period).map((v, i) => (dx[i] === null ? null : v));
-}
-
-export function vwap(candles: Candle[]): (number | null)[] {
-  const out: (number | null)[] = [];
-  let cumPV = 0, cumV = 0;
-  for (const c of candles) {
-    const typical = (c.h + c.l + c.c) / 3;
-    cumPV += typical * c.v;
-    cumV += c.v;
-    out.push(cumV ? cumPV / cumV : null);
+  let trSum = 0;
+  let plusSum = 0;
+  let minusSum = 0;
+  for (let i = 1; i <= period; i++) {
+    trSum += trs[i];
+    plusSum += plusDM[i];
+    minusSum += minusDM[i];
+  }
+  let prevPlusDI = 100 * (plusSum / trSum);
+  let prevMinusDI = 100 * (minusSum / trSum);
+  let dx = Math.abs(prevPlusDI - prevMinusDI) / (prevPlusDI + prevMinusDI || 1) * 100;
+  let adxVal = dx;
+  out[period] = adxVal;
+  for (let i = period + 1; i < candles.length; i++) {
+    trSum = trSum - trSum / period + trs[i];
+    plusSum = plusSum - plusSum / period + plusDM[i];
+    minusSum = minusSum - minusSum / period + minusDM[i];
+    const plusDI = 100 * (plusSum / trSum);
+    const minusDI = 100 * (minusSum / trSum);
+    dx = Math.abs(plusDI - minusDI) / (plusDI + minusDI || 1) * 100;
+    adxVal = (adxVal * (period - 1) + dx) / period;
+    out[i] = adxVal;
+    prevPlusDI = plusDI;
+    prevMinusDI = minusDI;
   }
   return out;
 }
 
-export function obv(candles: Candle[]): number[] {
+// ─── STOCHASTIC ──────────────────────────────────────────────────────────────
+export interface StochResult {
+  k: number[];
+  d: number[];
+}
+
+export function stoch(candles: Candle[], kPeriod = 14, dPeriod = 3): StochResult {
+  const k: number[] = new Array(candles.length).fill(NaN);
+  for (let i = kPeriod - 1; i < candles.length; i++) {
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = 0; j < kPeriod; j++) {
+      hh = Math.max(hh, candles[i - j].h);
+      ll = Math.min(ll, candles[i - j].l);
+    }
+    k[i] = hh === ll ? 50 : ((candles[i].c - ll) / (hh - ll)) * 100;
+  }
+  const d = sma(k.map((v) => (isNaN(v) ? 0 : v)), dPeriod);
+  return { k, d };
+}
+
+// ─── VWAP ────────────────────────────────────────────────────────────────────
+export function vwap(candles: Candle[]): number[] {
   const out: number[] = [];
-  let prev = 0;
+  let cumPV = 0;
+  let cumV = 0;
   for (let i = 0; i < candles.length; i++) {
-    if (i === 0) { out.push(0); prev = 0; continue; }
-    const dir = candles[i].c > candles[i - 1].c ? 1 : candles[i].c < candles[i - 1].c ? -1 : 0;
-    prev = prev + dir * candles[i].v;
-    out.push(prev);
+    const tp = (candles[i].h + candles[i].l + candles[i].c) / 3;
+    cumPV += tp * candles[i].v;
+    cumV += candles[i].v;
+    out.push(cumV === 0 ? tp : cumPV / cumV);
   }
   return out;
 }
 
-export function supportsResistances(candles: Candle[]): { level: number; type: 'support' | 'resistance'; strength: number }[] {
-  const levels: { level: number; type: 'support' | 'resistance'; strength: number }[] = [];
-  const window = 5;
-  for (let i = window; i < candles.length - window; i++) {
-    const slice = candles.slice(i - window, i + window + 1);
-    const highs = slice.map((c) => c.h);
-    const lows = slice.map((c) => c.l);
-    if (candles[i].h === Math.max(...highs)) {
-      levels.push({ level: candles[i].h, type: 'resistance', strength: window });
-    }
-    if (candles[i].l === Math.min(...lows)) {
-      levels.push({ level: candles[i].l, type: 'support', strength: window });
-    }
+// ─── OBV ─────────────────────────────────────────────────────────────────────
+export function obv(candles: Candle[]): number[] {
+  const out: number[] = [0];
+  for (let i = 1; i < candles.length; i++) {
+    if (candles[i].c > candles[i - 1].c) out.push(out[i - 1] + candles[i].v);
+    else if (candles[i].c < candles[i - 1].c) out.push(out[i - 1] - candles[i].v);
+    else out.push(out[i - 1]);
   }
-  // Cluster nearby levels.
-  const sorted = [...levels].sort((a, b) => a.level - b.level);
-  const clustered: typeof levels = [];
-  for (const l of sorted) {
-    const last = clustered[clustered.length - 1];
-    if (last && Math.abs(l.level - last.level) / l.level < 0.01) {
-      last.strength += l.strength;
-    } else {
-      clustered.push({ ...l });
-    }
-  }
-  return clustered.slice(-6);
+  return out;
 }
 
+// ─── CCI ─────────────────────────────────────────────────────────────────────
+export function cci(candles: Candle[], period = 20): number[] {
+  const out: number[] = new Array(candles.length).fill(NaN);
+  const tp = candles.map((c) => (c.h + c.l + c.c) / 3);
+  for (let i = period - 1; i < candles.length; i++) {
+    let sum = 0;
+    for (let j = 0; j < period; j++) sum += tp[i - j];
+    const avg = sum / period;
+    let dev = 0;
+    for (let j = 0; j < period; j++) dev += Math.abs(tp[i - j] - avg);
+    const md = dev / period;
+    out[i] = md === 0 ? 0 : (tp[i] - avg) / (0.015 * md);
+  }
+  return out;
+}
+
+// ─── WILLIAMS %R ─────────────────────────────────────────────────────────────
+export function williamsR(candles: Candle[], period = 14): number[] {
+  const out: number[] = new Array(candles.length).fill(NaN);
+  for (let i = period - 1; i < candles.length; i++) {
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = 0; j < period; j++) {
+      hh = Math.max(hh, candles[i - j].h);
+      ll = Math.min(ll, candles[i - j].l);
+    }
+    out[i] = hh === ll ? -50 : ((hh - candles[i].c) / (hh - ll)) * -100;
+  }
+  return out;
+}
+
+// ─── MFI ──────────────────────────────────────────────────────────────────────
+export function mfi(candles: Candle[], period = 14): number[] {
+  const out: number[] = new Array(candles.length).fill(NaN);
+  const tp = candles.map((c) => (c.h + c.l + c.c) / 3);
+  const rmf = tp.map((p, i) => p * candles[i].v);
+  for (let i = period; i < candles.length; i++) {
+    let posFlow = 0;
+    let negFlow = 0;
+    for (let j = 0; j < period; j++) {
+      const idx = i - j;
+      if (tp[idx] > tp[idx - 1]) posFlow += rmf[idx];
+      else negFlow += rmf[idx];
+    }
+    const mfr = negFlow === 0 ? 100 : 100 - 100 / (1 + posFlow / negFlow);
+    out[i] = mfr;
+  }
+  return out;
+}
+
+// ─── TECHNICAL SUMMARY ───────────────────────────────────────────────────────
 export interface TechnicalSummary {
   rsi: number;
-  rsiSignal: 'Oversold' | 'Overbought' | 'Neutral';
+  rsiSignal: string;
   macd: number;
   macdSignal: number;
   macdHist: number;
-  macdTrend: 'Bullish' | 'Bearish' | 'Neutral';
-  sma20: number;
+  macdTrend: string;
   sma50: number;
   sma200: number;
-  trend: 'Strong Uptrend' | 'Uptrend' | 'Downtrend' | 'Strong Downtrend' | 'Sideways';
-  aboveSma20: boolean;
   aboveSma50: boolean;
   aboveSma200: boolean;
   bbUpper: number;
+  bbMiddle: number;
   bbLower: number;
-  bbMid: number;
-  bbPosition: 'Upper' | 'Lower' | 'Middle';
-  atr: number;
+  bbPosition: number;
   adx: number;
-  adxTrend: 'Trending' | 'Weak/Range-bound';
+  adxTrend: string;
+  atr: number;
+  atrPct: number;
   stochK: number;
   stochD: number;
+  cci: number;
+  williamsR: number;
+  mfi: number;
+  obv: number;
+  obvTrend: string;
   vwap: number;
   supports: number[];
   resistances: number[];
-  score: number; // -100..100
-  verdict: 'Strong Buy' | 'Buy' | 'Neutral' | 'Sell' | 'Strong Sell';
+  trend: string;
+  score: number;
+  verdict: string;
 }
 
-export function analyzeTechnicals(candles: Candle[]): TechnicalSummary {
+export function analyzeTechnicals(candles: Candle[]): TechnicalSummary | null {
+  if (candles.length < 30) return null;
   const closes = candles.map((c) => c.c);
-  const rsiArr = rsi(closes, 14);
-  const macdRes = macd(closes);
-  const sma20 = sma(closes, 20);
-  const sma50 = sma(closes, 50);
-  const sma200 = sma(closes, 200);
-  const bb = bollingerBands(closes, 20, 2);
-  const atrArr = atr(candles);
-  const adxArr = adx(candles);
-  const stoch = stochastic(candles);
-  const vwapArr = vwap(candles);
-  const sr = supportsResistances(candles);
-
   const last = closes.length - 1;
   const price = closes[last];
-  const rsiVal = (rsiArr[last] ?? 50) as number;
-  const macdVal = (macdRes.macdLine[last] ?? 0) as number;
-  const macdSig = (macdRes.signalLine[last] ?? 0) as number;
-  const macdHist = (macdRes.histogram[last] ?? 0) as number;
-  const s20 = (sma20[last] ?? price) as number;
-  const s50 = (sma50[last] ?? price) as number;
-  const s200 = (sma200[last] ?? price) as number;
-  const bbU = (bb.upper[last] ?? price) as number;
-  const bbL = (bb.lower[last] ?? price) as number;
-  const bbM = (bb.mid[last] ?? price) as number;
-  const atrVal = (atrArr[last] ?? 0) as number;
-  const adxVal = (adxArr[last] ?? 0) as number;
-  const stochK = (stoch.k[last] ?? 50) as number;
-  const stochD = (stoch.d[last] ?? 50) as number;
-  const vwapVal = (vwapArr[last] ?? price) as number;
 
+  const rsiArr = rsi(closes, 14);
+  const rsiVal = rsiArr[last] || 50;
+  const rsiSignal = rsiVal > 70 ? "Overbought" : rsiVal < 30 ? "Oversold" : rsiVal > 50 ? "Bullish" : "Bearish";
+
+  const macdRes = macd(closes);
+  const macdVal = macdRes.macd[last];
+  const macdSig = macdRes.signal[last];
+  const macdHist = macdRes.histogram[last];
+  const macdTrend = macdHist > 0 && macdHist > macdRes.histogram[last - 1] ? "Bullish" : macdHist < 0 && macdHist < macdRes.histogram[last - 1] ? "Bearish" : "Neutral";
+
+  const sma50Arr = sma(closes, 50);
+  const sma200Arr = sma(closes, 200);
+  const sma50 = sma50Arr[last] || price;
+  const sma200 = sma200Arr[last] || price;
+
+  const bb = bollinger(closes, 20, 2);
+  const bbUpper = bb.upper[last] || price;
+  const bbMiddle = bb.middle[last] || price;
+  const bbLower = bb.lower[last] || price;
+  const bbRange = bbUpper - bbLower || 1;
+  const bbPosition = ((price - bbLower) / bbRange) * 100;
+
+  const adxArr = adx(candles, 14);
+  const adxVal = adxArr[last] || 0;
+  const adxTrend = adxVal > 25 ? (price > sma50 ? "Strong Uptrend" : "Strong Downtrend") : "Weak/Range-bound";
+
+  const atrArr = atr(candles, 14);
+  const atrVal = atrArr[last] || 0;
+  const atrPct = (atrVal / price) * 100;
+
+  const stochRes = stoch(candles, 14, 3);
+  const stochK = stochRes.k[last] || 50;
+  const stochD = stochRes.d[last] || 50;
+
+  const cciArr = cci(candles, 20);
+  const cciVal = cciArr[last] || 0;
+
+  const wrArr = williamsR(candles, 14);
+  const wrVal = wrArr[last] || -50;
+
+  const mfiArr = mfi(candles, 14);
+  const mfiVal = mfiArr[last] || 50;
+
+  const obvArr = obv(candles);
+  const obvVal = obvArr[last];
+  const obvTrend = obvArr[last] > obvArr[Math.max(0, last - 5)] ? "Rising" : "Falling";
+
+  const vwapArr = vwap(candles);
+  const vwapVal = vwapArr[last];
+
+  // Support / resistance from recent swing points
+  const lookback = Math.min(50, candles.length);
+  const recent = candles.slice(candles.length - lookback);
+  const highs = recent.map((c) => c.h).sort((a, b) => b - a);
+  const lows = recent.map((c) => c.l).sort((a, b) => a - b);
+  const resistances = [highs[0], highs[Math.floor(highs.length * 0.23)]].map((v) => Math.round(v * 100) / 100);
+  const supports = [lows[0], lows[Math.floor(lows.length * 0.23)]].map((v) => Math.round(v * 100) / 100);
+
+  // Score: -100 to 100
   let score = 0;
-  score += rsiVal < 30 ? 25 : rsiVal < 45 ? 10 : rsiVal > 70 ? -25 : rsiVal > 55 ? -10 : 0;
-  score += macdVal > macdSig ? 15 : -15;
-  score += macdHist > 0 ? 8 : -8;
-  score += price > s20 ? 8 : -8;
-  score += price > s50 ? 12 : -12;
-  score += price > s200 ? 18 : -18;
-  score += s20 > s50 ? 6 : -6;
-  score += s50 > s200 ? 10 : -10;
-  score += stochK < 20 ? 10 : stochK > 80 ? -10 : 0;
-  score += price > vwapVal ? 6 : -6;
-  score = Math.max(-100, Math.min(100, score));
+  score += (rsiVal - 50) * 0.4;
+  score += macdHist * 2;
+  score += price > sma50 ? 10 : -10;
+  score += price > sma200 ? 10 : -10;
+  score += bbPosition > 80 ? -10 : bbPosition < 20 ? 10 : 0;
+  score += adxVal > 25 ? (price > sma50 ? 10 : -10) : 0;
+  score += obvTrend === "Rising" ? 5 : -5;
+  score += (stochK - 50) * 0.2;
+  score = Math.max(-100, Math.min(100, Math.round(score)));
 
-  const verdict: TechnicalSummary['verdict'] =
-    score >= 50 ? 'Strong Buy' : score >= 15 ? 'Buy' : score <= -50 ? 'Strong Sell' : score <= -15 ? 'Sell' : 'Neutral';
-
-  let trend: TechnicalSummary['trend'] = 'Sideways';
-  if (price > s200 && price > s50 && s50 > s200) trend = 'Strong Uptrend';
-  else if (price > s50 && price > s20) trend = 'Uptrend';
-  else if (price < s200 && price < s50 && s50 < s200) trend = 'Strong Downtrend';
-  else if (price < s50 && price < s20) trend = 'Downtrend';
+  const trend = score > 30 ? "Bullish" : score < -30 ? "Bearish" : "Neutral";
+  const verdict = score > 50 ? "Strong Buy" : score > 20 ? "Buy" : score < -50 ? "Strong Sell" : score < -20 ? "Sell" : "Hold";
 
   return {
-    rsi: +rsiVal.toFixed(2),
-    rsiSignal: rsiVal < 30 ? 'Oversold' : rsiVal > 70 ? 'Overbought' : 'Neutral',
-    macd: +macdVal.toFixed(4),
-    macdSignal: +macdSig.toFixed(4),
-    macdHist: +macdHist.toFixed(4),
-    macdTrend: macdVal > macdSig ? 'Bullish' : macdVal < macdSig ? 'Bearish' : 'Neutral',
-    sma20: +s20.toFixed(2),
-    sma50: +s50.toFixed(2),
-    sma200: +s200.toFixed(2),
+    rsi: Math.round(rsiVal * 100) / 100,
+    rsiSignal,
+    macd: Math.round(macdVal * 1000) / 1000,
+    macdSignal: Math.round(macdSig * 1000) / 1000,
+    macdHist: Math.round(macdHist * 1000) / 1000,
+    macdTrend,
+    sma50: Math.round(sma50 * 100) / 100,
+    sma200: Math.round(sma200 * 100) / 100,
+    aboveSma50: price > sma50,
+    aboveSma200: price > sma200,
+    bbUpper: Math.round(bbUpper * 100) / 100,
+    bbMiddle: Math.round(bbMiddle * 100) / 100,
+    bbLower: Math.round(bbLower * 100) / 100,
+    bbPosition: Math.round(bbPosition * 100) / 100,
+    adx: Math.round(adxVal * 100) / 100,
+    adxTrend,
+    atr: Math.round(atrVal * 100) / 100,
+    atrPct: Math.round(atrPct * 100) / 100,
+    stochK: Math.round(stochK * 100) / 100,
+    stochD: Math.round(stochD * 100) / 100,
+    cci: Math.round(cciVal * 100) / 100,
+    williamsR: Math.round(wrVal * 100) / 100,
+    mfi: Math.round(mfiVal * 100) / 100,
+    obv: obvVal,
+    obvTrend,
+    vwap: Math.round(vwapVal * 100) / 100,
+    supports,
+    resistances,
     trend,
-    aboveSma20: price > s20,
-    aboveSma50: price > s50,
-    aboveSma200: price > s200,
-    bbUpper: +bbU.toFixed(2),
-    bbLower: +bbL.toFixed(2),
-    bbMid: +bbM.toFixed(2),
-    bbPosition: price > (bbU + bbM) / 2 ? 'Upper' : price < (bbL + bbM) / 2 ? 'Lower' : 'Middle',
-    atr: +atrVal.toFixed(2),
-    adx: +adxVal.toFixed(2),
-    adxTrend: adxVal > 25 ? 'Trending' : 'Weak/Range-bound',
-    stochK: +stochK.toFixed(2),
-    stochD: +stochD.toFixed(2),
-    vwap: +vwapVal.toFixed(2),
-    supports: sr.filter((l) => l.type === 'support').map((l) => +l.level.toFixed(2)).slice(-3),
-    resistances: sr.filter((l) => l.type === 'resistance').map((l) => +l.level.toFixed(2)).slice(-3),
-    score: +score.toFixed(0),
+    score,
     verdict,
   };
+}
+
+// ─── FUNDAMENTAL SCORE ───────────────────────────────────────────────────────
+export interface FundamentalScore {
+  score: number;
+  grade: string;
+  valuation: number;
+  profitability: number;
+  growth: number;
+  financialHealth: number;
+  cashFlow: number;
+  notes: string[];
+}
+
+export function scoreFundamentals(fund: Fundamentals): FundamentalScore {
+  const notes: string[] = [];
+
+  // Valuation (0-100, higher = cheaper)
+  let valuation = 50;
+  if (fund.pe > 0 && fund.pe < 15) { valuation += 25; notes.push("Attractive P/E ratio"); }
+  else if (fund.pe > 35) { valuation -= 20; notes.push("High P/E ratio"); }
+  if (fund.peg > 0 && fund.peg < 1) { valuation += 15; notes.push("Favorable PEG ratio"); }
+  else if (fund.peg > 2) { valuation -= 10; notes.push("Elevated PEG ratio"); }
+  if (fund.pb < 1.5) valuation += 10;
+  else if (fund.pb > 5) valuation -= 10;
+  valuation = Math.max(0, Math.min(100, valuation));
+
+  // Profitability (0-100)
+  let profitability = 50;
+  if (fund.roe > 15) { profitability += 20; notes.push("Strong return on equity"); }
+  else if (fund.roe < 5) profitability -= 15;
+  if (fund.netMargin > 0.15) { profitability += 15; notes.push("Healthy net margins"); }
+  else if (fund.netMargin < 0.05) profitability -= 10;
+  if (fund.roa > 5) profitability += 10;
+  profitability = Math.max(0, Math.min(100, profitability));
+
+  // Growth (0-100)
+  let growth = 50;
+  if (fund.revenueGrowth > 15) { growth += 25; notes.push("Robust revenue growth"); }
+  else if (fund.revenueGrowth < 0) { growth -= 20; notes.push("Declining revenue"); }
+  if (fund.earningsGrowth > 20) { growth += 20; notes.push("Strong earnings growth"); }
+  else if (fund.earningsGrowth < 0) growth -= 15;
+  growth = Math.max(0, Math.min(100, growth));
+
+  // Financial health (0-100)
+  let financialHealth = 50;
+  if (fund.debtToEquity < 0.5) { financialHealth += 20; notes.push("Low leverage"); }
+  else if (fund.debtToEquity > 2) { financialHealth -= 25; notes.push("High debt levels"); }
+  if (fund.currentRatio > 2) financialHealth += 15;
+  else if (fund.currentRatio < 1) financialHealth -= 20;
+  financialHealth = Math.max(0, Math.min(100, financialHealth));
+
+  // Cash flow (0-100)
+  let cashFlow = 50;
+  if (fund.fcfYield > 5) { cashFlow += 20; notes.push("Strong free cash flow yield"); }
+  else if (fund.fcfYield < 0) { cashFlow -= 20; notes.push("Negative free cash flow"); }
+  if (fund.payoutRatio < 0.6 && fund.dividendYield > 0) cashFlow += 10;
+  cashFlow = Math.max(0, Math.min(100, cashFlow));
+
+  const score = Math.round((valuation + profitability + growth + financialHealth + cashFlow) / 5);
+  const grade = score >= 80 ? "A" : score >= 70 ? "B" : score >= 60 ? "C" : score >= 50 ? "D" : "F";
+
+  return { score, grade, valuation, profitability, growth, financialHealth, cashFlow, notes };
 }

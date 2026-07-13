@@ -1,83 +1,144 @@
-import { useMemo } from 'react';
-import { Star, Trash2 } from 'lucide-react';
-import { getCandles } from '../lib/dataService';
-import { getLiveQuote, useLiveQuotes } from '../lib/liveFeed';
-import { STOCK_UNIVERSE } from '../lib/universe';
-import { fmtNum, fmtPctRaw, fmtCompact } from '../lib/format';
-import { Sparkline } from '../components/Sparkline';
-import type { WatchItem } from '../lib/hooks';
+import { useMemo } from "react";
+import { Star, X, Eye } from "lucide-react";
+import { getMeta } from "../lib/universe";
+import { getLiveQuote, getCandles } from "../lib/dataService";
+import { useLiveQuotes } from "../lib/hooks";
+import { useCurrency } from "../lib/currency";
+import { fmtPctRaw } from "../lib/format";
+import { Sparkline } from "../components/Sparkline";
+import type { Quote } from "../lib/types";
 
-interface Props {
-  items: WatchItem[];
+interface WatchlistProps {
+  items: string[];
   onOpenStock: (s: string) => void;
   onRemove: (s: string) => void;
   loading: boolean;
 }
 
-export function Watchlist({ items, onOpenStock, onRemove, loading }: Props) {
+function sparkPointsFor(symbol: string): number[] {
+  const candles = getCandles(symbol, "1W");
+  if (!candles.length) return [];
+  return candles.map((c) => c.c);
+}
+
+export function Watchlist({ items, onOpenStock, onRemove, loading }: WatchlistProps) {
   useLiveQuotes();
-  const rows = useMemo(() =>
-    items.map((i) => {
-      const meta = STOCK_UNIVERSE.find((s) => s.symbol === i.symbol);
-      const q = getLiveQuote(i.symbol);
-      const spark = getCandles(i.symbol, '1M').map((c) => c.c).filter((_, idx) => idx % 3 === 0).slice(-30);
-      return { i, meta, q, spark };
-    }).filter((r) => r.meta && r.q),
-  [items]);
+  const { formatPrice, formatCompact } = useCurrency();
+
+  const rows = useMemo(() => {
+    return items.map((symbol) => {
+      const meta = getMeta(symbol);
+      const quote = getLiveQuote(symbol);
+      const points = sparkPointsFor(symbol);
+      return { symbol, meta, quote, points };
+    });
+  }, [items]);
+
+  if (loading) {
+    return (
+      <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
+        <div className="flex items-center gap-2 mb-4">
+          <Star size={18} className="text-accent-400" />
+          <h2 className="text-lg font-semibold text-ink-100">Watchlist</h2>
+        </div>
+        <div className="card p-8 text-center text-ink-500">Loading watchlist...</div>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
+        <div className="flex items-center gap-2 mb-4">
+          <Star size={18} className="text-accent-400" />
+          <h2 className="text-lg font-semibold text-ink-100">Watchlist</h2>
+        </div>
+        <div className="card p-12 text-center">
+          <Star size={40} className="mx-auto text-ink-600 mb-3" />
+          <p className="text-ink-400 mb-1">Your watchlist is empty.</p>
+          <p className="text-sm text-ink-500">
+            Click the star icon on any stock detail page to add it here.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-ink-50 flex items-center gap-2"><Star size={20} className="text-brand-400" /> Watchlist</h1>
-        <p className="text-ink-400 text-sm">Tracked stocks, persisted across sessions.</p>
+    <div className="p-4 sm:p-6 space-y-4 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <Star size={18} className="text-accent-400" />
+        <h2 className="text-lg font-semibold text-ink-100">Watchlist</h2>
+        <span className="chip bg-ink-800 text-ink-400">{items.length} stocks</span>
       </div>
 
-      {loading && <div className="card p-8 text-center text-ink-500 text-sm">Loading…</div>}
-
-      {!loading && rows.length === 0 && (
-        <div className="card p-10 text-center">
-          <Star size={28} className="mx-auto text-ink-600 mb-3" />
-          <p className="text-ink-300">Your watchlist is empty.</p>
-          <p className="text-ink-500 text-sm mt-1">Open any stock and tap the star to add it here.</p>
-        </div>
-      )}
-
-      {rows.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-ink-500 text-xs">
-                  <th className="text-left px-4 py-2 font-medium">Symbol</th>
-                  <th className="text-left px-4 py-2 font-medium hidden sm:table-cell">Name</th>
-                  <th className="text-left px-4 py-2 font-medium hidden md:table-cell">Trend</th>
-                  <th className="text-right px-4 py-2 font-medium">Price</th>
-                  <th className="text-right px-4 py-2 font-medium">Chg %</th>
-                  <th className="text-right px-4 py-2 font-medium hidden lg:table-cell">Mkt cap</th>
-                  <th className="px-4 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.i.symbol} className="border-t border-white/[0.03] hover:bg-white/[0.03] transition">
-                    <td className="px-4 py-2.5">
-                      <button onClick={() => onOpenStock(r.i.symbol)} className="font-semibold text-ink-100">{r.i.symbol}</button>
+      {/* Table */}
+      <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/5 bg-ink-900/50">
+                <th className="text-left py-3 px-4 font-medium text-ink-400">Symbol</th>
+                <th className="text-left py-3 px-4 font-medium text-ink-400 hidden md:table-cell">Name</th>
+                <th className="text-center py-3 px-4 font-medium text-ink-400 hidden sm:table-cell">7D Trend</th>
+                <th className="text-right py-3 px-4 font-medium text-ink-400">Price</th>
+                <th className="text-right py-3 px-4 font-medium text-ink-400">Change %</th>
+                <th className="text-right py-3 px-4 font-medium text-ink-400 hidden lg:table-cell">Volume</th>
+                <th className="text-right py-3 px-4 font-medium text-ink-400 w-12"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const positive = r.quote ? r.quote.changePct >= 0 : true;
+                return (
+                  <tr
+                    key={r.symbol}
+                    onClick={() => onOpenStock(r.symbol)}
+                    className="border-b border-white/5 last:border-0 hover:bg-white/5 cursor-pointer transition"
+                  >
+                    <td className="py-3 px-4 font-semibold text-ink-100">{r.symbol}</td>
+                    <td className="py-3 px-4 text-ink-400 hidden md:table-cell truncate max-w-[200px]">
+                      {r.meta?.name ?? "—"}
                     </td>
-                    <td className="px-4 py-2.5 text-ink-400 truncate max-w-[200px] hidden sm:table-cell">{r.meta!.name}</td>
-                    <td className="px-4 py-2.5 hidden md:table-cell w-20"><div className="w-16 h-8"><Sparkline points={r.spark} positive={r.q!.changePct >= 0} /></div></td>
-                    <td className="px-4 py-2.5 text-right font-mono text-ink-100">{fmtNum(r.q!.price)}</td>
-                    <td className={`px-4 py-2.5 text-right font-mono ${r.q!.changePct >= 0 ? 'text-bull' : 'text-bear'}`}>{r.q!.changePct >= 0 ? '+' : ''}{fmtPctRaw(r.q!.changePct)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-ink-400 hidden lg:table-cell">${fmtCompact(r.q!.marketCap)}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      <button onClick={() => onRemove(r.i.symbol)} className="text-ink-500 hover:text-bear transition"><Trash2 size={15} /></button>
+                    <td className="py-3 px-4 hidden sm:table-cell">
+                      <div className="flex justify-center">
+                        <Sparkline points={r.points} positive={positive} width={80} height={28} />
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-ink-200">
+                      {r.quote ? formatPrice(r.quote.price, r.meta?.currency) : "—"}
+                    </td>
+                    <td className={`py-3 px-4 text-right font-mono ${positive ? "text-bull" : "text-bear"}`}>
+                      {r.quote ? (positive ? "+" : "") + fmtPctRaw(r.quote.changePct) : "—"}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono text-ink-400 hidden lg:table-cell">
+                      {r.quote ? formatCompact(r.quote.volume) : "—"}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onRemove(r.symbol); }}
+                        className="text-ink-500 hover:text-bear transition p-1"
+                        aria-label={"Remove " + r.symbol + " from watchlist"}
+                      >
+                        <X size={16} />
+                      </button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
+
+      {/* Footer hint */}
+      <div className="flex items-center gap-2 text-xs text-ink-500">
+        <Eye size={14} />
+        <span>Live quotes update every 5 seconds. Click any row to view details.</span>
+      </div>
     </div>
   );
 }
+
+export default Watchlist;
